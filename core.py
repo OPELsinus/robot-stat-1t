@@ -119,7 +119,7 @@ class Sprut(App):
 
 class Odines(App):
     def __init__(self, timeout=60, debug=False, logger=None):
-        path_ = r'C:\Program Files\1cv8\common\1cestart.exe'
+        path_ = r'C:\Program Files\1cv8\8.3.13.1644\bin\1cv8.exe' # C:\Program Files\1cv8\common\1cestart.exe
         super(Odines, self).__init__(path_, timeout=timeout, debug=debug, logger=logger)
         self.keys.CLEAR = self.keys.CLEAN
         self.fuckn_tooltip_selector = {
@@ -128,7 +128,7 @@ class Odines(App):
             "parent": self.root
         }
         self.root_selector = {
-            "title_re": "1С:Предприятие - Алматы центр / ТОО \"Magnum Cash&Carry\" / Алматы  управление / .*",
+            "title": "1С:Предприятие - Зарплата и Управление Персоналом КОРП для Казахстана / RPArobot",
             "class_name": "V8TopLevelFrame", "control_type": "Window",
             "visible_only": True, "enabled_only": True, "found_index": 0,
             "parent": None
@@ -148,7 +148,7 @@ class Odines(App):
             "visible_only": True, "enabled_only": True, "found_index": 0, "parent": None
         })
         self.find_element({
-            "title": "go_copy", "class_name": "", "control_type": "ListItem",
+            "title": "ЗУП", "class_name": "", "control_type": "ListItem",
             "visible_only": True, "enabled_only": True, "found_index": 0
         }).click(double=True)
         sleep(3)
@@ -165,7 +165,7 @@ class Odines(App):
         self.find_element({
             "title": "", "class_name": "", "control_type": "Edit", "visible_only": True, "enabled_only": True,
             "found_index": 0
-        }).set_text(odines_password_rpa)
+        }).set_text('Aa123456')
         self.find_element({
             "title": "OK", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True,
             "found_index": 0
@@ -240,6 +240,7 @@ class Odines(App):
     def navigate(self, *steps, maximize_innder=False):
         sleep(1)
         # self.wait_fuckn_tooltip()
+        print(self.root)
         for n, step in enumerate(steps):
             if n:
                 if not self.wait_element({
