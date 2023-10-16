@@ -594,6 +594,16 @@ def get_all_branches():
     return pd.DataFrame(cur.fetchall())
 
 
+def replacements(ind, line):
+
+    if ind == 0:
+        return line.replace('С', 'C')
+    if ind == 1:
+        return line.replace('ТОО ', 'ТОО')
+    if ind == 2:
+        return line.replace('г. ', 'г.')
+
+
 def open_1c_zup():
 
     app = Odines()
@@ -615,19 +625,58 @@ def open_1c_zup():
     app1.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
                        "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(r'C:\Users\Abdykarim.D\Documents\РегламентированныйОтчетФорма1ТКвартальная_на тест.erf', app.keys.ENTER)
 
-    app.root = {"title": "", "class_name": "", "control_type": "Pane", "visible_only": True, "enabled_only": True, "found_index": 25}
+    app.parent_switch({"title": "", "class_name": "", "control_type": "Pane", "visible_only": True, "enabled_only": True, "found_index": 20})
 
-    app.find_element({"title": "", "class_name": "", "control_type": "Edit",
-                      "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+    el = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+                           "visible_only": True, "enabled_only": True, "found_index": 0})
 
-    all_branches = get_all_branches()
+    second_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+                                     "visible_only": True, "enabled_only": True, "found_index": 1})
 
-    for a in all_branches[all_branches.columns[0]]:
-        print(a)
-        app.find_element({"title": "", "class_name": "", "control_type": "Edit",
-                          "visible_only": True, "enabled_only": True, "found_index": 0}).click()
-        app.find_element({"title": "", "class_name": "", "control_type": "Edit",
-                          "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(a)
+    el.click()
+
+    # arrow_left = app.find_element({"title": "", "class_name": "", "control_type": "Button",
+    #                                "visible_only": True, "enabled_only": True, "found_index": 2}, timeout=1)
+
+    sleep(.1)
+    print()
+    keyboard.send_keys("%+r")
+    sleep(.1)
+    app.parent_switch(app.root)
+    # app.parent_switch({"title": "", "class_name": "", "control_type": "Pane", "visible_only": True, "enabled_only": True, "found_index": 25})
+
+    # arrow_right = app.find_element({"title": "", "class_name": "", "control_type": "Button",
+    #                                 "visible_only": True, "enabled_only": True, "found_index": 3}, timeout=1)
+    print()
+    # all_branches = get_all_branches()
+    all_branches = pd.read_excel('kek.xlsx')
+    for a in all_branches[all_branches.columns[1]]:
+
+        for tries in range(3):
+            print('"', a, sep='', end='')
+
+            el.click(double=True)
+            # app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+            #                   "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1).click()
+            # app.find_element({"title": "", "class_name": "", "control_type": "Edit",г. Петропавлов
+            #                   "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1).type_keys(a)
+            el.type_keys(replacements(tries, a))
+            second_input.click()
+
+            if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
+                                 "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1.5):
+                app.find_element({"title": "Нет", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+                print(f' - BAD {tries}",')
+
+            else:
+                print(f' - GOOD {tries}",')
+                break
+            # arrow_right.click()
+            # arrow_left.click()
+            el.click()
+            el.type_keys("^a")
+            el.type_keys("{BACKSPACE}")
 
     sleep(1000)
 
@@ -636,7 +685,7 @@ if __name__ == '__main__':
 
     sql_create_table()
 
-    # open_1c_zup()
+    open_1c_zup()
 
     # for branch in os.listdir(r'\\172.16.8.87\d\.rpa\.agent\robot-1p\Output\Для стата'):
     #     if '~' not in branch:
