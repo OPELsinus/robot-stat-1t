@@ -64,16 +64,17 @@ postgre_ip = global_env_data['postgre_ip']
 postgre_port = global_env_data['postgre_port']
 
 # ? PROJECT
-robot_name = 'robot-stat-1p'  # ! FIXME
+robot_name = 'robot-stat-1t'  # ! FIXME
 config_path = local_path.joinpath(f'.agent\\{robot_name}\\config.json')
 config_data = json_read(config_path)
 chat_id = config_data['chat_id']
+ecp_paths = config_data['ecp_paths']
+main_excel_file = config_data['main_excel_file']
 
-ecp_paths = r'\\vault.magnum.local\common\Stuff\_06_Бухгалтерия\! Актуальные ЭЦП'
 
 ip_address = socket.gethostbyname(socket.gethostname())
 
-saving_path = global_path.joinpath(f".agent\\{robot_name}\\Output")
+saving_path = global_path.joinpath(f".agent\\{robot_name}\\Output\\Выгрузка 1Т из 1С")
 saving_path.mkdir(exist_ok=True, parents=True)
 
 download_path = Path.home().joinpath('downloads')

@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 import shutil
 import time
 from contextlib import suppress
@@ -8,12 +9,14 @@ from time import sleep
 import pandas as pd
 
 import psycopg2
+import xlrd
 from mouseinfo import screenshot
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment
 from pywinauto import keyboard
+import xlwings as xw
 
-from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, download_path, ecp_paths
+from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, download_path, ecp_paths, main_excel_file
 from core import Odines
 from tools.app import App
 from tools.web import Web
@@ -604,81 +607,218 @@ def replacements(ind, line):
         return line.replace('г. ', 'г.')
 
 
-def open_1c_zup():
+def get_store_name(branch_1c):
+    conn = psycopg2.connect(host='172.16.10.22', port=db_port, database='adb', user='rpa_robot', password='Qaz123123+')
+    table_create_query = f'''
+            select distinct(store_name) from dwh_data.dim_store where store_name like '%Торговый%'and name_1c_zup = '{branch_1c}'
+            and current_date between datestart and dateend
+            '''
+    cur = conn.cursor()
+    cur.execute(table_create_query)
 
-    app = Odines()
-    app.run()
+    df_ = pd.DataFrame(cur.fetchall())
 
-    print('started navigating')
+    return df_[df_.columns[0]].iloc[0]
 
-    app.navigate("Файл", "Открыть...")
 
-    print('navigated')
+def get_single_report(name_up: str, name_down: str):
+    try:
+        app = Odines()
+        app.run()
 
-    app1 = App('')
-    app1.wait_element({"title": "Открытие", "class_name": "#32770", "control_type": "Window",
-                       "visible_only": True, "enabled_only": True, "found_index": 0})
+        print('started navigating')
 
-    app1.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
-                       "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+        app.navigate("Файл", "Открыть...")
 
-    app1.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
-                       "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(r'C:\Users\Abdykarim.D\Documents\РегламентированныйОтчетФорма1ТКвартальная_на тест.erf', app.keys.ENTER)
+        print('navigated')
 
-    app.parent_switch({"title": "", "class_name": "", "control_type": "Pane", "visible_only": True, "enabled_only": True, "found_index": 20})
-
-    el = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+        app1 = App('')
+        app1.wait_element({"title": "Открытие", "class_name": "#32770", "control_type": "Window",
                            "visible_only": True, "enabled_only": True, "found_index": 0})
 
-    second_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
-                                     "visible_only": True, "enabled_only": True, "found_index": 1})
+        app1.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
+                           "visible_only": True, "enabled_only": True, "found_index": 0}).click()
 
-    el.click()
+        app1.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
+                           "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(r'C:\Users\Abdykarim.D\Documents\РегламентированныйОтчетФорма1ТКвартальная_на тест.erf', app.keys.ENTER)
 
-    # arrow_left = app.find_element({"title": "", "class_name": "", "control_type": "Button",
-    #                                "visible_only": True, "enabled_only": True, "found_index": 2}, timeout=1)
+        app.parent_switch({"title": "", "class_name": "", "control_type": "Pane", "visible_only": True, "enabled_only": True, "found_index": 20})
 
-    sleep(.1)
-    print()
-    keyboard.send_keys("%+r")
-    sleep(.1)
-    app.parent_switch(app.root)
-    # app.parent_switch({"title": "", "class_name": "", "control_type": "Pane", "visible_only": True, "enabled_only": True, "found_index": 25})
+        first_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+                                        "visible_only": True, "enabled_only": True, "found_index": 0})
 
-    # arrow_right = app.find_element({"title": "", "class_name": "", "control_type": "Button",
-    #                                 "visible_only": True, "enabled_only": True, "found_index": 3}, timeout=1)
-    print()
-    # all_branches = get_all_branches()
-    all_branches = pd.read_excel('kek.xlsx')
-    for a in all_branches[all_branches.columns[1]]:
+        second_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+                                         "visible_only": True, "enabled_only": True, "found_index": 1})
 
-        for tries in range(3):
-            print('"', a, sep='', end='')
+        first_input.click()
 
-            el.click(double=True)
-            # app.find_element({"title": "", "class_name": "", "control_type": "Edit",
-            #                   "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1).click()
-            # app.find_element({"title": "", "class_name": "", "control_type": "Edit",г. Петропавлов
-            #                   "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1).type_keys(a)
-            el.type_keys(replacements(tries, a))
-            second_input.click()
+        sleep(.1)
+        print()
+        keyboard.send_keys("%+r")
 
-            if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
-                                 "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1.5):
-                app.find_element({"title": "Нет", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+        app.parent_switch(app.root)
 
-                print(f' - BAD {tries}",')
+        # ? ---
+        # app.parent_switch({"title": "", "class_name": "", "control_type": "Pane", "visible_only": True, "enabled_only": True, "found_index": 25})
 
-            else:
-                print(f' - GOOD {tries}",')
+        # arrow_right = app.find_element({"title": "", "class_name": "", "control_type": "Button",
+        #                                 "visible_only": True, "enabled_only": True, "found_index": 3}, timeout=1)
+        print()
+        # all_branches = get_all_branches()
+
+        short_name = get_store_name(name_down)
+
+        print(name_down, '|||', short_name)
+
+        print(name_up, name_down, sep=' | ', end='')
+
+        app.find_element({"title": "", "class_name": "", "control_type": "Button",
+                          "visible_only": True, "enabled_only": True, "found_index": 2}, timeout=1).click()
+
+        first_input.click()
+        first_input.type_keys("^a")
+        first_input.type_keys("{BACKSPACE}")
+        first_input.type_keys(name_up)
+
+        if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
+                             "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1.5):
+            app.find_element({"title": "Нет", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+            print(f' - BAD', end='')
+
+        else:
+            print(f' - GOOD', end='')
+
+        second_input.click()
+        second_input.type_keys("^a")
+        second_input.type_keys("{BACKSPACE}")
+        second_input.type_keys(name_down)
+
+        if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
+                             "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1.5):
+            app.find_element({"title": "Нет", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+            print(f' - BAD",')
+
+        else:
+            print(f' - GOOD",')
+
+        app.find_element({"title": "ОК", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+        app.find_element({"title": "Заполнить", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+        checker = False
+
+        for _ in range(100):
+            with suppress(Exception):
+                app.find_element({"title": "", "class_name": "", "control_type": "DataGrid", "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=10).click()
+                checker = True
                 break
-            # arrow_right.click()
-            # arrow_left.click()
-            el.click()
-            el.type_keys("^a")
-            el.type_keys("{BACKSPACE}")
+            sleep(30)
 
-    sleep(1000)
+        if checker:
+            app.navigate("Файл", "Сохранить как...")
+
+            app.wait_element({"title": "Сохранение", "class_name": "#32770", "control_type": "Window",
+                              "visible_only": True, "enabled_only": True, "found_index": 0})
+
+            app.find_element({"title": "Тип файла:", "class_name": "AppControlHost", "control_type": "ComboBox",
+                              "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+            app.find_element({"title": "Лист Excel2007-... (*.xlsx)", "class_name": "", "control_type": "ListItem",
+                              "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+            app.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
+                              "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+
+            app.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
+                              "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(os.path.join(saving_path, short_name), app.keys.ENTER)
+
+            return [os.path.join(saving_path, short_name), short_name]
+    except:
+        pass
+
+
+def edit_main_excel_file(filepath: str, number: str):
+
+    main_excel = load_workbook(main_excel_file, data_only=True)
+
+    needed_sheet_name = None
+    for sheet_name in main_excel.sheetnames:
+        if number == sheet_name.split()[1]:
+            needed_sheet_name = sheet_name
+            break
+
+    main_sheet = main_excel[f'{needed_sheet_name}']
+
+    quarter = None
+
+    for col in 'BDFH':
+        if main_sheet[f'{col}4'].value is None and main_sheet[f'{col}21'].value is None:
+            quarter = col
+
+    workers_end_of_period_main = main_sheet[f'{col}31'].value
+
+    excel_app = xw.App(visible=False)
+    excel_app.books.open(filepath, corrupt_load=True)
+
+    app = xw.apps.active
+    # branch_excel = xlrd.open_workbook(filepath)
+    print(app.range('AJ155').value)
+
+    values = {
+        '4': 'AJ92',
+        '5': 'AJ96',
+        '6': 'AJ98',
+        '7': 'AJ102',
+        '8': 'AJ104',
+        '9': 'AJ110',
+        '12': 'AJ116',
+        '13': 'AJ118',
+        '14': 'AJ120',
+        '20': 'AJ130'
+    }
+
+    workers_hired = app.range('AJ132').value
+    workers_end_of_period = app.range('AJ155').value
+    workers_fired = sum([s for s in app.range('AJ138:AJ153').value if s is not None])
+    print(workers_fired)
+    print(workers_hired, workers_end_of_period, workers_end_of_period_main, workers_fired)
+    if workers_end_of_period != (workers_end_of_period_main + workers_hired - workers_fired):
+        print(int(workers_end_of_period), int((workers_end_of_period_main + workers_hired - workers_fired)))
+        workers_hired += int(workers_end_of_period) - int((workers_end_of_period_main + workers_hired - workers_fired))
+
+    print(workers_hired, workers_end_of_period, workers_end_of_period_main, workers_fired)
+
+    # os.system('taskkill /im excel.exe /f')
+
+
+def open_1c_zup():
+
+    all_branches = pd.read_excel('real_mopping.xlsx')
+    c = 0
+    for ind in range(len(all_branches)):
+
+        pattern = r'\d+'
+
+        numbers = re.findall(pattern, all_branches['Низ'].iloc[ind])
+        # with suppress(Exception):
+        #     if numbers[0] == '27':
+        #         print(all_branches['Низ'].iloc[ind])
+        if 'алмат' in all_branches['Низ'].iloc[ind].lower() and int(numbers[0]) <= 39 and 'центр' not in all_branches['Низ'].iloc[ind].lower():
+            print(numbers, '|||', all_branches['Низ'].iloc[ind])
+            c += 1
+
+            edit_main_excel_file(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С\Торговый зал АФ №21.xlsx', '21')
+            break
+            continue
+
+            filepath, short_name = get_single_report(all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
+
+            edit_main_excel_file(filepath, numbers[0])
+
+    print(c)
+    # sleep(1000)
 
 
 if __name__ == '__main__':
@@ -709,5 +849,6 @@ if __name__ == '__main__':
     #
     #             insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
     #                               executor_name=ip_address, status_='failed with error', error_reason=str(error), error_saved_path='', execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch_))
+
 
 
