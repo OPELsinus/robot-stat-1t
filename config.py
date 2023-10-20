@@ -71,11 +71,12 @@ chat_id = config_data['chat_id']
 ecp_paths = config_data['ecp_paths']
 main_excel_file = config_data['main_excel_file']
 
-
 ip_address = socket.gethostbyname(socket.gethostname())
 
-saving_path = global_path.joinpath(f".agent\\{robot_name}\\Output\\Выгрузка 1Т из 1С")
+saving_path = global_path.joinpath(f".agent\\{robot_name}\\Output")
 saving_path.mkdir(exist_ok=True, parents=True)
+saving_path_1c = global_path.joinpath(f".agent\\{robot_name}\\Output\\Выгрузка 1Т из 1С")
+saving_path_1c.mkdir(exist_ok=True, parents=True)
 
 download_path = Path.home().joinpath('downloads')
 db_host = global_env_data['postgre_ip']
@@ -85,6 +86,13 @@ db_name = global_env_data['postgre_db_name']
 db_schema = 'robot'
 db_user = global_env_data['postgre_db_username']
 db_pass = global_env_data['postgre_db_password']
+
+adb_ip = global_env_data['adb_ip']
+adb_port = global_env_data['adb_port']
+adb_db_name = global_env_data['adb_db_name']
+adb_db_username = global_env_data['adb_db_username']
+adb_db_password = global_env_data['adb_db_password']
+
 project_path = global_path.joinpath(f'.agent').joinpath(robot_name).joinpath(get_hostname())
 project_path.mkdir(exist_ok=True, parents=True)
 config_path = project_path.joinpath('config.json')

@@ -1,5 +1,6 @@
 import datetime
 import os
+import random
 import re
 import shutil
 import time
@@ -16,7 +17,7 @@ from openpyxl.styles import PatternFill, Alignment
 from pywinauto import keyboard
 import xlwings as xw
 
-from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, download_path, ecp_paths, main_excel_file
+from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, saving_path_1c, download_path, ecp_paths, main_excel_file, adb_db_password, adb_db_name, adb_db_username, adb_ip, adb_port
 from core import Odines
 from tools.app import App
 from tools.web import Web
@@ -31,6 +32,7 @@ def sql_create_table():
             store_name text UNIQUE,
             executor_name text,
             status text,
+            status_1c text,
             error_reason text,
             error_saved_path text,
             execution_time text,
@@ -67,7 +69,7 @@ def get_all_data():
     cur.execute(table_create_query)
 
     df1 = pd.DataFrame(cur.fetchall())
-    df1.columns = ['started_time', 'ended_time', 'full_name', 'executor_name', 'status', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
+    df1.columns = ['started_time', 'ended_time', 'full_name', 'executor_name', 'status', 'status_1c', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
 
     cur.close()
     conn.close()
@@ -108,7 +110,7 @@ def get_data_to_execute():
     df1 = pd.DataFrame(cur.fetchall())
 
     with suppress(Exception):
-        df1.columns = ['started_time', 'ended_time', 'full_name', 'executor_name', 'status', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
+        df1.columns = ['started_time', 'ended_time', 'full_name', 'executor_name', 'status', 'status_1c', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
 
     cur.close()
     conn.close()
@@ -116,7 +118,7 @@ def get_data_to_execute():
     return df1
 
 
-def insert_data_in_db(started_time, store_name, executor_name, status_, error_reason, error_saved_path, execution_time, ecp_path_):
+def insert_data_in_db(started_time, store_name, executor_name, status_, status_1c, error_reason, error_saved_path, execution_time, ecp_path_):
     conn = psycopg2.connect(host=db_host, port=db_port, database=db_name, user=db_user, password=db_pass)
 
     print('Started inserting')
@@ -127,7 +129,7 @@ def insert_data_in_db(started_time, store_name, executor_name, status_, error_re
         delete from ROBOT.{robot_name.replace("-", "_")} where store_name = '{store_name}'
     """
     query = f"""
-        INSERT INTO ROBOT.{robot_name.replace("-", "_")} (started_time, ended_time, store_name, executor_name, status, error_reason, error_saved_path, execution_time, ecp_path)
+        INSERT INTO ROBOT.{robot_name.replace("-", "_")} (started_time, ended_time, store_name, executor_name, status, status_1c, error_reason, error_saved_path, execution_time, ecp_path)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     # ended_time = '' if status_ != 'success' else datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f")
@@ -138,6 +140,7 @@ def insert_data_in_db(started_time, store_name, executor_name, status_, error_re
         store_name,
         executor_name,
         status_,
+        status_1c,
         error_reason,
         error_saved_path,
         str(execution_time),
@@ -170,8 +173,8 @@ def insert_data_in_db(started_time, store_name, executor_name, status_, error_re
 
 def get_all_branches_with_codes():
 
-    conn = psycopg2.connect(dbname='adb', host='172.16.10.22', port='5432',
-                            user='rpa_robot', password='Qaz123123+')
+    conn = psycopg2.connect(dbname=adb_db_name, host=adb_ip, port=adb_port,
+                            user=adb_db_username, password=adb_db_password)
 
     cur = conn.cursor(name='1583_first_part')
 
@@ -235,8 +238,8 @@ def sign_ecp(ecp):
 
 def save_screenshot(store):
     scr = screenshot()
-    save_path = os.path.join(saving_path, 'Ошибки 1П')
-    scr_path = str(os.path.join(os.path.join(saving_path, 'Ошибки 1П'), str(store + '.png')))
+    save_path = os.path.join(saving_path, 'Ошибки 1Т')
+    scr_path = str(os.path.join(os.path.join(saving_path, 'Ошибки 1Т'), str(store + '.png')))
     scr.save(scr_path)
 
     return scr_path
@@ -311,11 +314,12 @@ def create_and_send_final_report():
 
 
 def wait_image_loaded():
+
     found = False
     while True:
         for file in os.listdir(download_path):
             if '.jpg' in file and 'crdownload' not in file:
-                shutil.move(os.path.join(download_path, file), os.path.join(os.path.join(saving_path, 'Отчёты 2т'), branch + '.jpg'))
+                shutil.move(os.path.join(download_path, file), os.path.join(os.path.join(saving_path, 'Отчёты 1Т'), branch + '.jpg'))
                 print(file)
                 found = True
                 break
@@ -324,6 +328,7 @@ def wait_image_loaded():
 
 
 def save_and_send(web, save):
+
     print('Saving and Sending')
     if save:
         web.execute_script_click_xpath("//span[text() = 'Сохранить']")
@@ -343,7 +348,8 @@ def save_and_send(web, save):
         print('GOVNO OSHIBKA VYLEZLA')
 
 
-def start_single_branch(filepath, store, values_first_part, values_second_part):
+def start_single_branch(branch_name: str, store: str, values_first_part, values_second_part):
+
     print('Started web')
 
     web = Web()
@@ -365,11 +371,11 @@ def start_single_branch(filepath, store, values_first_part, values_second_part):
     logger.info('Check-2')
     ecp_auth = ''
     ecp_sign = ''
-    for files in os.listdir(filepath):
+    for files in os.listdir(os.path.join(ecp_paths, branch_name)):
         if 'AUTH' in files:
-            ecp_auth = os.path.join(filepath, files)
+            ecp_auth = os.path.join(os.path.join(ecp_paths, branch_name), files)
         if 'GOST' in files:
-            ecp_sign = os.path.join(filepath, files)
+            ecp_sign = os.path.join(os.path.join(ecp_paths, branch_name), files)
 
     sleep(1)
     sign_ecp(ecp_auth)
@@ -416,7 +422,7 @@ def start_single_branch(filepath, store, values_first_part, values_second_part):
                 web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
             sleep(1)
 
-            # ? Check if 1П exists
+            # ? Check if 1Т exists
 
             if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=1.5):
                 web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
@@ -426,8 +432,8 @@ def start_single_branch(filepath, store, values_first_part, values_second_part):
                 is_loaded = True if len(web.find_elements("//div[contains(@class, 'x-grid-row-expander')]", timeout=15)) >= 1 else False
 
                 if is_loaded:
-                    if web.wait_element("//div[contains(text(), '1-П')]", timeout=3):
-                        web.find_element("//div[contains(text(), '1-П')]").click()
+                    if web.wait_element("//div[contains(text(), '1-Т')]", timeout=3):
+                        web.find_element("//div[contains(text(), '1-Т')]").click()
 
                     else:
                         saved_path = save_screenshot(store)
@@ -435,7 +441,7 @@ def start_single_branch(filepath, store, values_first_part, values_second_part):
                         web.quit()
 
                         print('Return those shit')
-                        return ['failed', saved_path, 'Нет 1-П']
+                        return ['failed', saved_path, 'Нет 1-Т']
 
                 else:
                     web.refresh()
@@ -490,27 +496,8 @@ def start_single_branch(filepath, store, values_first_part, values_second_part):
             web.find_element("//a[contains(text(), 'Страница 1')]").click()
             print()
             id_ = 3
-            for ind, key in enumerate(first.keys()):
 
-                if key == 'Всего':
-                    continue
-                if first.get(key) > 0:
-                    print(key, first.get(key))
-                    print(f'//*[@id="{id_}"]/td[3]', f'//*[@id="{id_}_col_1"]')
-                    web.find_element(f'//*[@id="3"]/td[2]').click()
 
-                    print()
-                    web.find_element(f'//*[@id="{id_}_col_1"]').type_keys(str(key))
-                    print(datetime.datetime.now(), '111')
-                    sleep(1.5)
-
-                    print(datetime.datetime.now(), '111.1')
-                    keyboard.send_keys('{ENTER}')
-                    print('112')
-                    # web.find_element(f'//*[@id="{ind + 1}"]/td[3]').click()
-                    web.find_element(f'//*[@id="{id_}_col_2"]').type_keys(str(first.get(key)))
-                    print('113')
-                    id_ += 1
 
             keyboard.send_keys('{TAB}')
             # sleep(100)
@@ -622,6 +609,7 @@ def get_store_name(branch_1c):
 
 
 def get_single_report(name_up: str, name_down: str):
+
     try:
         app = Odines()
         app.run()
@@ -702,62 +690,68 @@ def get_single_report(name_up: str, name_down: str):
 
         else:
             print(f' - GOOD",')
-
-        app.find_element({"title": "ОК", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
-
-        app.find_element({"title": "Заполнить", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
-
-        checker = False
-
-        for _ in range(100):
-            with suppress(Exception):
-                app.find_element({"title": "", "class_name": "", "control_type": "DataGrid", "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=10).click()
-                checker = True
-                break
-            sleep(30)
-
-        if checker:
-            app.navigate("Файл", "Сохранить как...")
-
-            app.wait_element({"title": "Сохранение", "class_name": "#32770", "control_type": "Window",
-                              "visible_only": True, "enabled_only": True, "found_index": 0})
-
-            app.find_element({"title": "Тип файла:", "class_name": "AppControlHost", "control_type": "ComboBox",
-                              "visible_only": True, "enabled_only": True, "found_index": 0}).click()
-
-            app.find_element({"title": "Лист Excel2007-... (*.xlsx)", "class_name": "", "control_type": "ListItem",
-                              "visible_only": True, "enabled_only": True, "found_index": 0}).click()
-
-            app.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
-                              "visible_only": True, "enabled_only": True, "found_index": 0}).click()
-
-            app.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
-                              "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(os.path.join(saving_path, short_name), app.keys.ENTER)
-
-            return [os.path.join(saving_path, short_name), short_name]
+        return ['', '']
+        # app.find_element({"title": "ОК", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+        #
+        # app.find_element({"title": "Заполнить", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+        #
+        # checker = False
+        #
+        # for _ in range(100):
+        #     with suppress(Exception):
+        #         app.find_element({"title": "", "class_name": "", "control_type": "DataGrid", "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=10).click()
+        #         checker = True
+        #         break
+        #     sleep(30)
+        #
+        # if checker:
+        #     app.navigate("Файл", "Сохранить как...")
+        #
+        #     app.wait_element({"title": "Сохранение", "class_name": "#32770", "control_type": "Window",
+        #                       "visible_only": True, "enabled_only": True, "found_index": 0})
+        #
+        #     app.find_element({"title": "Тип файла:", "class_name": "AppControlHost", "control_type": "ComboBox",
+        #                       "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+        #
+        #     app.find_element({"title": "Лист Excel2007-... (*.xlsx)", "class_name": "", "control_type": "ListItem",
+        #                       "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+        #
+        #     app.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
+        #                       "visible_only": True, "enabled_only": True, "found_index": 0}).click()
+        #
+        #     app.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
+        #                       "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(os.path.join(saving_path_1c, short_name), app.keys.ENTER)
+        #
+        #     return [os.path.join(saving_path_1c, short_name + '.xlsx), short_name]
     except:
         pass
 
 
-def edit_main_excel_file(filepath: str, number: str):
+def edit_main_excel_file(number: str, filepath: str):
 
-    main_excel = load_workbook(main_excel_file, data_only=True)
+    os.system('taskkill /im excel.exe /f')
+
+    main_excel = xw.Book(main_excel_file, corrupt_load=True)
 
     needed_sheet_name = None
-    for sheet_name in main_excel.sheetnames:
-        if number == sheet_name.split()[1]:
+
+    for sheet_name in main_excel.sheets:
+        if number == sheet_name.name.split()[1]:
             needed_sheet_name = sheet_name
             break
 
-    main_sheet = main_excel[f'{needed_sheet_name}']
+    main_sheet = main_excel.sheets[needed_sheet_name]
 
     quarter = None
 
     for col in 'BDFH':
         if main_sheet[f'{col}4'].value is None and main_sheet[f'{col}21'].value is None:
             quarter = col
+            break
 
-    workers_end_of_period_main = main_sheet[f'{col}31'].value
+    print('col:', quarter)
+
+    workers_end_of_period_main = int(main_sheet[f'{col}31'].value)
 
     excel_app = xw.App(visible=False)
     excel_app.books.open(filepath, corrupt_load=True)
@@ -775,13 +769,12 @@ def edit_main_excel_file(filepath: str, number: str):
         '9': 'AJ110',
         '12': 'AJ116',
         '13': 'AJ118',
-        '14': 'AJ120',
-        '20': 'AJ130'
+        '14': 'AJ120'
     }
 
-    workers_hired = app.range('AJ132').value
-    workers_end_of_period = app.range('AJ155').value
-    workers_fired = sum([s for s in app.range('AJ138:AJ153').value if s is not None])
+    workers_hired: int = int(app.range('AJ132').value)
+    workers_end_of_period: int = int(app.range('AJ155').value)
+    workers_fired = int(sum([s for s in app.range('AJ138:AJ153').value if s is not None]))
     print(workers_fired)
     print(workers_hired, workers_end_of_period, workers_end_of_period_main, workers_fired)
     if workers_end_of_period != (workers_end_of_period_main + workers_hired - workers_fired):
@@ -790,13 +783,33 @@ def edit_main_excel_file(filepath: str, number: str):
 
     print(workers_hired, workers_end_of_period, workers_end_of_period_main, workers_fired)
 
-    # os.system('taskkill /im excel.exe /f')
+    for key, val in values.items():
+        if key not in '89':
+            main_sheet[f'{quarter}{key}'].value = round(app.range(val).value)
+        else:
+            main_sheet[f'{quarter}{key}'].value = app.range(val).value
+
+    main_sheet[f'{quarter}21'].value = workers_hired
+    main_sheet[f'{quarter}29'].value = workers_fired
+
+    main_excel.app.calculate()
+    main_excel.save(os.path.join(saving_path, '1Т Заполненный файл.xlsx'))
+    main_excel.close()
+
+    os.system('taskkill /im excel.exe /f')
+
+    return quarter
 
 
 def open_1c_zup():
 
     all_branches = pd.read_excel('real_mopping.xlsx')
     c = 0
+
+    all_excels = dict()
+
+    print()
+
     for ind in range(len(all_branches)):
 
         pattern = r'\d+'
@@ -805,50 +818,83 @@ def open_1c_zup():
         # with suppress(Exception):
         #     if numbers[0] == '27':
         #         print(all_branches['Низ'].iloc[ind])
+
         if 'алмат' in all_branches['Низ'].iloc[ind].lower() and int(numbers[0]) <= 39 and 'центр' not in all_branches['Низ'].iloc[ind].lower():
             print(numbers, '|||', all_branches['Низ'].iloc[ind])
             c += 1
 
-            edit_main_excel_file(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С\Торговый зал АФ №21.xlsx', '21')
+            # edit_main_excel_file(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С\Торговый зал АФ №21.xlsx', '21')
+            # break
+            # continue
+
+            # filepath, short_name = get_single_report(all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
+            short_name = f'Торговый зал АФ №21'
+            filepath = ind
+            all_excels.update({short_name: [filepath, numbers[0]]})
+
+    return all_excels
+
+
+def get_data_to_fill(short_name_, col_):
+
+    os.system('taskkill /im excel.exe /f')
+
+    main_excel = xw.Book('temp.xlsx', corrupt_load=True) # * os.path.join(saving_path, '1Т Заполненный файл.xlsx')
+
+    needed_sheet_name = None
+    print('col:', col_)
+    number = short_name_.split('№')[1]
+
+    for sheet_name in main_excel.sheets:
+        if number == sheet_name.name.split()[1]:
+            needed_sheet_name = sheet_name
             break
-            continue
 
-            filepath, short_name = get_single_report(all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
+    main_sheet = main_excel.sheets[needed_sheet_name]
+    print(needed_sheet_name)
+    for row in ['4', '5', '6', '7', '8', '9', '12', '13', '14', '20', '21', '29']:
+        if row in '89':
+            print(main_sheet.range(f'{col_}{row}').value, main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value)
+        else:
+            print(round(main_sheet.range(f'{col_}{row}').value), round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value))
 
-            edit_main_excel_file(filepath, numbers[0])
-
-    print(c)
-    # sleep(1000)
+    main_excel.close()
 
 
 if __name__ == '__main__':
 
     sql_create_table()
 
-    open_1c_zup()
+    all_excels = open_1c_zup()
 
-    # for branch in os.listdir(r'\\172.16.8.87\d\.rpa\.agent\robot-1p\Output\Для стата'):
-    #     if '~' not in branch:
-    #         print(branch)
-    #         if 'АФ №10' not in branch:
-    #             continue
-    #
-    #
-    #
-    #         branch_ = branch.replace('_stat.xlsx', '')
-    #         start_time = time.time()
-    #         insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
-    #                           executor_name=ip_address, status_='processing', error_reason='', error_saved_path='', execution_time='', ecp_path_=os.path.join(ecp_paths, branch_))
-    #         try:
-    #             status, error_saved_path, error = start_single_branch(os.path.join(ecp_paths, branch_), branch_, first, second)
-    #
-    #             insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
-    #                               executor_name=ip_address, status_=status, error_reason=error, error_saved_path=error_saved_path, execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch_))
-    #
-    #         except Exception as error:
-    #
-    #             insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
-    #                               executor_name=ip_address, status_='failed with error', error_reason=str(error), error_saved_path='', execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch_))
+    # edit_main_excel_file(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С\Торговый зал АФ №21.xlsx', '21')
+
+    col = 'F' # None
+    # for key, val in all_excels.items():
+    #     col = edit_main_excel_file(key, val[1])
+
+    for key, vals in all_excels.items():
+        if '~' not in vals:
+            if '21' not in key:
+                continue
+            print(key, vals)
+
+            get_data_to_fill(key, col)
+
+            # start_time = time.time()
+            # insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
+            #                   executor_name=ip_address, status_='processing', error_reason='', error_saved_path='', execution_time='', ecp_path_=os.path.join(ecp_paths, branch_))
+            # try:
+            #     status, error_saved_path, error = start_single_branch(os.path.join(ecp_paths, branch_), branch_, first, second)
+            #
+            #     insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
+            #                       executor_name=ip_address, status_=status, error_reason=error, error_saved_path=error_saved_path, execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch_))
+            #
+            # except Exception as error:
+            #
+            #     insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
+            #                       executor_name=ip_address, status_='failed with error', error_reason=str(error), error_saved_path='', execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch_))
+
 
 
 
