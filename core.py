@@ -240,7 +240,7 @@ class Odines(App):
     def navigate(self, *steps, maximize_innder=False):
         sleep(1)
         # self.wait_fuckn_tooltip()
-        print(self.root)
+
         for n, step in enumerate(steps):
             if n:
                 if not self.wait_element({

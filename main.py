@@ -313,13 +313,13 @@ def create_and_send_final_report():
     send_file_to_tg(tg_token, chat_id, 'Отправляем отчёт по заполнению', 'result.xlsx')
 
 
-def wait_image_loaded():
+def wait_image_loaded(name):
 
     found = False
     while True:
         for file in os.listdir(download_path):
             if '.jpg' in file and 'crdownload' not in file:
-                shutil.move(os.path.join(download_path, file), os.path.join(os.path.join(saving_path, 'Отчёты 1Т'), branch + '.jpg'))
+                shutil.move(os.path.join(download_path, file), os.path.join(os.path.join(saving_path, 'Отчёты 1Т'), name + '.jpg'))
                 print(file)
                 found = True
                 break
@@ -336,6 +336,7 @@ def save_and_send(web, save):
         print('Clicked Save')
         if web.wait_element("//span[text() = 'Сохранить отчет и Удалить другие']", timeout=5):
             web.execute_script_click_xpath("//span[text() = 'Сохранить отчет и Удалить другие']")
+
     print('Clicking Send')
     errors_count = web.find_elements('//*[@id="statflc"]/ul/li/a')
     if len(errors_count) <= 1:
@@ -348,7 +349,11 @@ def save_and_send(web, save):
         print('GOVNO OSHIBKA VYLEZLA')
 
 
-def start_single_branch(branch_name: str, store: str, values_first_part, values_second_part):
+def start_single_branch(branch_name: str,  values_first_part: dict, values_second_part: dict):
+
+    def pass_later():
+        if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=1.5):
+            web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
 
     print('Started web')
 
@@ -385,12 +390,8 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
     if logged_in:
         if web.find_element("//a[text() = 'Выйти']"):
 
-            if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=5):
-                try:
-                    web.find_element("//span[contains(text(), 'Пройти позже')]").click()
-                except:
-                    save_screenshot(store)
-            logger.info('Check0')
+            pass_later()
+
             if web.wait_element('//*[@id="dontAgreeId-inputEl"]', timeout=5):
                 web.find_element('//*[@id="dontAgreeId-inputEl"]').click()
                 sleep(0.3)
@@ -405,12 +406,11 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
                 sign_ecp(ecp_sign)
 
                 try:
-                    web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=5)
-                    web.find_element("//span[contains(text(), 'Пройти позже')]").click()
+                    pass_later()
 
                 except:
                     pass
-            logger.info('Check1')
+
             web.wait_element('//*[@id="tab-1168-btnInnerEl"]')
             web.find_element('//*[@id="tab-1168-btnInnerEl"]').click()
 
@@ -418,47 +418,45 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
 
             web.wait_element('//*[@id="radio-1131-boxLabelEl"]')
 
-            if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=1.5):
-                web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
-            sleep(1)
+            pass_later()
 
             # ? Check if 1Т exists
 
-            if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=1.5):
-                web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
+            pass_later()
 
-            for _ in range(5):
-
-                is_loaded = True if len(web.find_elements("//div[contains(@class, 'x-grid-row-expander')]", timeout=15)) >= 1 else False
-
-                if is_loaded:
-                    if web.wait_element("//div[contains(text(), '1-Т')]", timeout=3):
-                        web.find_element("//div[contains(text(), '1-Т')]").click()
-
-                    else:
-                        saved_path = save_screenshot(store)
-                        web.close()
-                        web.quit()
-
-                        print('Return those shit')
-                        return ['failed', saved_path, 'Нет 1-Т']
-
-                else:
-                    web.refresh()
-
-            if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=1.5):
-                web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
-            # web.find_element('//*[@id="radio-1133-boxLabelEl"]').click()
-            # wait_loading(web, '//*[@id="loadmask-1315"]')
-            # web.refresh()
-
-            sleep(0.5)
-
-            web.find_element('//*[@id="createReportId-btnIconEl"]').click()
-
-            sleep(1)
-
-            # ? Switch to the second window
+            # * ------- Uncomment -------
+            # for _ in range(5):
+            #
+            #     is_loaded = True if len(web.find_elements("//div[contains(@class, 'x-grid-row-expander')]", timeout=15)) >= 1 else False
+            #
+            #     if is_loaded:
+            #         if web.wait_element("//div[contains(text(), '1-Т')]", timeout=3):
+            #             web.find_element("//div[contains(text(), '1-Т')]").click()
+            #
+            #         else:
+            #             saved_path = save_screenshot(branch_name)
+            #             web.close()
+            #             web.quit()
+            #
+            #             print('Return those shit')
+            #             return ['failed', saved_path, 'Нет 1-Т']
+            #
+            #     else:
+            #         web.refresh()
+            #
+            # if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=1.5):
+            #     web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
+            #
+            # sleep(0.5)
+            #
+            # web.find_element('//*[@id="createReportId-btnIconEl"]').click()
+            #
+            # sleep(1)
+            #
+            # # ? Switch to the second window
+            print('kek1')
+            sleep(7)
+            print('switched')
             web.driver.switch_to.window(web.driver.window_handles[-1])
 
             web.find_element('/html/body/div[1]').click()
@@ -467,22 +465,20 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
             sleep(0.3)
 
             if web.get_element_display('/html/body/div[7]') == 'block':
+
                 web.find_element('/html/body/div[7]/div[11]/div/button[2]').click()
 
-                saved_path = save_screenshot(store)
+                saved_path = save_screenshot(branch_name)
                 web.close()
                 web.quit()
 
                 print('Return that shit')
                 return ['failed', saved_path, 'Выскочила ошиПочка']
 
-            logger.info('Check3')
             web.wait_element('//*[@id="sel_statcode_accord"]/div/p/b[1]', timeout=100)
             web.execute_script_click_js("body > div:nth-child(16) > div.ui-dialog-buttonpane.ui-widget-content.ui-helper-clearfix > div > button:nth-child(1) > span")
-            # sleep(10900)
+
             web.wait_element('//*[@id="sel_rep_accord"]/h3[1]/a')
-            logger.info('Check999')
-            sites = []
 
             # ? Open new report to fill it
 
@@ -491,13 +487,20 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
             web.execute_script_click_xpath('/html/body/div[17]/div[11]/div/button[1]/span')
 
             # ? First page
-
+            print('kek')
             web.wait_element("//a[contains(text(), 'Страница 1')]", timeout=10)
             web.find_element("//a[contains(text(), 'Страница 1')]").click()
             print()
-            id_ = 3
 
+            for row, values in values_first_part.items():
 
+                if values[0] is not None:
+                    web.find_element(f'(//*[@id="{row}"]/td[3])[1]').click()
+                    web.find_element(f'(//*[@id="{row}_col_2"])').type_keys(values[0])
+
+                if values[1] is not None:
+                    web.find_element(f'(//*[@id="{row}"]/td[4])[1]').click()
+                    web.find_element(f'(//*[@id="{row}_col_3"])').type_keys(values[1])
 
             keyboard.send_keys('{TAB}')
             # sleep(100)
@@ -505,52 +508,35 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
             web.wait_element("//a[contains(text(), 'Страница 2')]", timeout=10)
             web.find_element("//a[contains(text(), 'Страница 2')]").click()
 
-            web.find_element('//*[@id="rtime"]').select('2')
+            web.find_element('//*[@id="rtime"]').select('1')
             sleep(1)
             print('-----')
 
-            id_ = 3
-            for i in range(len(second)):
+            for row, values in values_second_part.items():
 
-                cur_key = list(second.keys())[i]
+                if values[0] is not None:
+                    web.find_element(f'(//*[@id="{row}"]/td[3])[2]').click()
+                    web.find_element(f'(//*[@id="{row}_col_2"])').type_keys(values[0])
 
-                if cur_key == 'Всего':
-                    continue
-
-                web.find_element(f"//table[@id='tb_p1_e0']//tr[{id_}]/td[@role='gridcell'][2]").click()
-                web.wait_element(f"//table[@id='tb_p1_e0']//tr[{id_}]/td[@role='gridcell'][2]//input")
-                web.find_element(f"//table[@id='tb_p1_e0']//tr[{id_}]/td[@role='gridcell'][2]//input").type_keys(cur_key, delay=1)
-                sleep(1)
-                keyboard.send_keys('{ENTER}')
-                print(cur_key)
-
-                for ind, val in enumerate(second.get(cur_key)):
-
-                    if val == 0 and ind >= 2:
-                        continue
-                    else:
-                        web.find_element(f"//table[@id='tb_p1_e0']//tr[{id_}]/td[@role='gridcell'][{ind + 4}]").click(double=True)
-                        print(second.get(cur_key)[ind])
-                        # print(f"//table[@id='tb_p1_e0']//tr[{id_}]/td[@role='gridcell'][{ind + 4}]//input")
-                        web.wait_element(f"//table[@id='tb_p1_e0']//tr[{id_}]/td[@role='gridcell'][{ind + 4}]//input")
-                        web.find_element(f"//table[@id='tb_p1_e0']//tr[{id_}]/td[@role='gridcell'][{ind + 4}]//input").type_keys(str(second.get(cur_key)[ind]), delay=1)
-
-                id_ += 1
+                if values[1] is not None:
+                    web.find_element(f'(//*[@id="{row}"]/td[4])[2]').click()
+                    web.find_element(f'(//*[@id="{row}_col_3"])').type_keys(values[1])
 
             keyboard.send_keys('{TAB}')
             # ? Last page
             web.find_element("//a[contains(text(), 'Данные исполнителя')]").click()
-            web.execute_script(element_type="value", xpath="//*[@id='inpelem_2_0']", value='Нарымбаева Алия')
-            web.execute_script(element_type="value", xpath="//*[@id='inpelem_2_1']", value='87717041897')
-            web.execute_script(element_type="value", xpath="//*[@id='inpelem_2_2']", value='87717041897')
-            web.execute_script(element_type="value", xpath="//*[@id='inpelem_2_3']", value='Narymbayeva@magnum.kz')
+            web.execute_script(element_type="value", xpath="//*[@id='inpelem_3_0']", value='Естаева Акбота Канатовна')
+            web.execute_script(element_type="value", xpath="//*[@id='inpelem_3_1']", value='7273391350')
+            web.execute_script(element_type="value", xpath="//*[@id='inpelem_3_2']", value='7073882688')
+            web.execute_script(element_type="value", xpath="//*[@id='inpelem_3_3']", value='Yestayeva@magnum.kz')
 
-            save_and_send(web, save=True)
+            sleep(3000)
+            # save_and_send(web, save=True)
             sleep(3000)
             # sign_ecp(ecp_sign)
             # sleep(1000)
 
-            # wait_image_loaded()
+            # wait_image_loaded(branch_name)
 
             web.close()
             web.quit()
@@ -562,7 +548,7 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
 
     else:
 
-        saved_path = save_screenshot(store)
+        saved_path = save_screenshot(branch_name)
 
         web.close()
         web.quit()
@@ -572,7 +558,7 @@ def start_single_branch(branch_name: str, store: str, values_first_part, values_
 
 
 def get_all_branches():
-    conn = psycopg2.connect(host='172.16.10.22', port=db_port, database='adb', user='rpa_robot', password='Qaz123123+')
+    conn = psycopg2.connect(host=adb_ip, port=adb_port, database=adb_db_name, user=adb_db_username, password=adb_db_password)
     table_create_query = f'''
                 select name_1c_zup from dwh_data.dim_store
                 where current_date between datestart and dateend
@@ -595,7 +581,7 @@ def replacements(ind, line):
 
 
 def get_store_name(branch_1c):
-    conn = psycopg2.connect(host='172.16.10.22', port=db_port, database='adb', user='rpa_robot', password='Qaz123123+')
+    conn = psycopg2.connect(host=adb_ip, port=adb_port, database=adb_db_name, user=adb_db_username, password=adb_db_password)
     table_create_query = f'''
             select distinct(store_name) from dwh_data.dim_store where store_name like '%Торговый%'and name_1c_zup = '{branch_1c}'
             and current_date between datestart and dateend
@@ -641,7 +627,7 @@ def get_single_report(name_up: str, name_down: str):
         first_input.click()
 
         sleep(.1)
-        print()
+
         keyboard.send_keys("%+r")
 
         app.parent_switch(app.root)
@@ -651,7 +637,7 @@ def get_single_report(name_up: str, name_down: str):
 
         # arrow_right = app.find_element({"title": "", "class_name": "", "control_type": "Button",
         #                                 "visible_only": True, "enabled_only": True, "found_index": 3}, timeout=1)
-        print()
+
         # all_branches = get_all_branches()
 
         short_name = get_store_name(name_down)
@@ -666,7 +652,9 @@ def get_single_report(name_up: str, name_down: str):
         first_input.click()
         first_input.type_keys("^a")
         first_input.type_keys("{BACKSPACE}")
-        first_input.type_keys(name_up)
+        first_input.type_keys(name_up.strip(), protect_first=True)
+
+        second_input.click()
 
         if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
                              "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1.5):
@@ -677,10 +665,9 @@ def get_single_report(name_up: str, name_down: str):
         else:
             print(f' - GOOD', end='')
 
-        second_input.click()
         second_input.type_keys("^a")
         second_input.type_keys("{BACKSPACE}")
-        second_input.type_keys(name_down)
+        second_input.type_keys(name_down.strip(), protect_first=True)
 
         if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
                              "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1.5):
@@ -690,6 +677,7 @@ def get_single_report(name_up: str, name_down: str):
 
         else:
             print(f' - GOOD",')
+        print()
         return ['', '']
         # app.find_element({"title": "ОК", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
         #
@@ -827,8 +815,8 @@ def open_1c_zup():
             # break
             # continue
 
-            # filepath, short_name = get_single_report(all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
-            short_name = f'Торговый зал АФ №21'
+            filepath, short_name = get_single_report(all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
+            # short_name = f'Торговый зал АФ №21' # ? To be removed
             filepath = ind
             all_excels.update({short_name: [filepath, numbers[0]]})
 
@@ -852,13 +840,50 @@ def get_data_to_fill(short_name_, col_):
 
     main_sheet = main_excel.sheets[needed_sheet_name]
     print(needed_sheet_name)
-    for row in ['4', '5', '6', '7', '8', '9', '12', '13', '14', '20', '21', '29']:
+
+    first_part_, second_part_ = dict(), dict()
+
+    first_vals = {
+        0: 1,
+        1: 2,
+        2: 3,
+        3: 4,
+        4: 5,
+        5: 6,
+        6: 9,
+        7: 10,
+        8: 11
+    }
+
+    second_vals = {
+        0: 2,
+        1: 10,
+        2: 11,
+        3: 12
+    }
+
+    for ind_, row in enumerate(['4', '5', '6', '7', '8', '9', '12', '13', '14']):
+
         if row in '89':
-            print(main_sheet.range(f'{col_}{row}').value, main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value)
+
+            first_part_.update({first_vals.get(ind_): [main_sheet.range(f'{col_}{row}').value, main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value]})
+
         else:
-            print(round(main_sheet.range(f'{col_}{row}').value), round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value))
+            left = round(main_sheet.range(f'{col_}{row}').value) if main_sheet.range(f'{col_}{row}').value is not None else None
+            right = round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value) if main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value is not None else None
+            first_part_.update({first_vals.get(ind_): [left, right]})
+
+    for ind_, row in enumerate(['21', '29', '30', '31']):
+
+        left = round(main_sheet.range(f'{col_}{row}').value) if main_sheet.range(f'{col_}{row}').value is not None else None
+        right = round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value) if main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value is not None else None
+        second_part_.update({second_vals.get(ind_): [left, right]})
 
     main_excel.close()
+
+    os.system('taskkill /im excel.exe /f')
+
+    return first_part_, second_part_
 
 
 if __name__ == '__main__':
@@ -866,7 +891,7 @@ if __name__ == '__main__':
     sql_create_table()
 
     all_excels = open_1c_zup()
-
+    exit()
     # edit_main_excel_file(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С\Торговый зал АФ №21.xlsx', '21')
 
     col = 'F' # None
@@ -879,7 +904,12 @@ if __name__ == '__main__':
                 continue
             print(key, vals)
 
-            get_data_to_fill(key, col)
+            first_part, second_part = get_data_to_fill(key, col)
+
+            print('-------------')
+            print(first_part, second_part, sep='\n')
+
+            start_single_branch(key, first_part, second_part)
 
             # start_time = time.time()
             # insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
