@@ -17,7 +17,7 @@ from openpyxl.styles import PatternFill, Alignment
 from pywinauto import keyboard
 import xlwings as xw
 
-from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, saving_path_1c, download_path, ecp_paths, main_excel_file, adb_db_password, adb_db_name, adb_db_username, adb_ip, adb_port
+from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, saving_path_1c, download_path, ecp_paths, main_excel_file, adb_db_password, adb_db_name, adb_db_username, adb_ip, adb_port, mapping_file, filled_file
 from core import Odines
 from tools.app import App
 from tools.web import Web
@@ -30,6 +30,7 @@ def sql_create_table():
             started_time timestamp,
             ended_time timestamp,
             store_name text UNIQUE,
+            short_name text,
             executor_name text,
             status text,
             status_1c text,
@@ -69,7 +70,7 @@ def get_all_data():
     cur.execute(table_create_query)
 
     df1 = pd.DataFrame(cur.fetchall())
-    df1.columns = ['started_time', 'ended_time', 'full_name', 'executor_name', 'status', 'status_1c', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
+    df1.columns = ['started_time', 'ended_time', 'full_name', 'short_name', 'executor_name', 'status', 'status_1c', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
 
     cur.close()
     conn.close()
@@ -100,7 +101,7 @@ def get_data_to_execute():
     conn = psycopg2.connect(host=db_host, port=db_port, database=db_name, user=db_user, password=db_pass)
     table_create_query = f'''
             SELECT * FROM ROBOT.{robot_name.replace("-", "_")}
-            where (status != 'success' and status != 'processing')
+            where (status_1c != 'success' and status_1c != 'processing')
             and (executor_name is NULL or executor_name = '{ip_address}')
             order by started_time desc
             '''
@@ -110,7 +111,7 @@ def get_data_to_execute():
     df1 = pd.DataFrame(cur.fetchall())
 
     with suppress(Exception):
-        df1.columns = ['started_time', 'ended_time', 'full_name', 'executor_name', 'status', 'status_1c', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
+        df1.columns = ['started_time', 'ended_time', 'full_name', 'short_name', 'executor_name', 'status', 'status_1c', 'error_reason', 'error_saved_path', 'execution_time', 'ecp_path']
 
     cur.close()
     conn.close()
@@ -118,7 +119,8 @@ def get_data_to_execute():
     return df1
 
 
-def insert_data_in_db(started_time, store_name, executor_name, status_, status_1c, error_reason, error_saved_path, execution_time, ecp_path_):
+def insert_data_in_db(started_time: str, store_name: str, short_name: str, executor_name: str, status_: str, status_1c: str, error_reason: str, error_saved_path: str, execution_time: int, ecp_path_: str):
+
     conn = psycopg2.connect(host=db_host, port=db_port, database=db_name, user=db_user, password=db_pass)
 
     print('Started inserting')
@@ -129,8 +131,8 @@ def insert_data_in_db(started_time, store_name, executor_name, status_, status_1
         delete from ROBOT.{robot_name.replace("-", "_")} where store_name = '{store_name}'
     """
     query = f"""
-        INSERT INTO ROBOT.{robot_name.replace("-", "_")} (started_time, ended_time, store_name, executor_name, status, status_1c, error_reason, error_saved_path, execution_time, ecp_path)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO ROBOT.{robot_name.replace("-", "_")} (started_time, ended_time, store_name, short_name, executor_name, status, status_1c, error_reason, error_saved_path, execution_time, ecp_path)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     # ended_time = '' if status_ != 'success' else datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f")
     ended_time = datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f")
@@ -138,6 +140,7 @@ def insert_data_in_db(started_time, store_name, executor_name, status_, status_1
         started_time,
         ended_time,
         store_name,
+        short_name,
         executor_name,
         status_,
         status_1c,
@@ -159,11 +162,11 @@ def insert_data_in_db(started_time, store_name, executor_name, status_, status_1
     except Exception as e:
         print('GOVNO', e)
         pass
-    try:
+    if True:
         cursor.execute(query, values)
-    except Exception as e:
-        conn.rollback()
-        print(f"Error: {e}")
+    # except Exception as e:
+    #     conn.rollback()
+    #     print(f"Error: {e}")
 
     conn.commit()
 
@@ -272,7 +275,7 @@ def send_file_to_tg(tg_token, chat_id, param, param1):
 def create_and_send_final_report():
     df = get_all_data()
 
-    df.columns = ['Время начала', 'Время окончания', 'Название филиала', 'Статус', 'Причина ошибки', 'Пусть сохранения скриншота', 'Время исполнения (сек)', 'Факт1', 'Факт2', 'Факт3', 'Сайт1', 'Сайт2', 'Сайт3']
+    df.columns = ['Время начала', 'Время окончания', 'Название филиала', 'Короткое название', 'Статус', 'Причина ошибки', 'Пусть сохранения скриншота', 'Время исполнения (сек)', 'Факт1', 'Факт2', 'Факт3', 'Сайт1', 'Сайт2', 'Сайт3']
 
     df['Время исполнения (сек)'] = df['Время исполнения (сек)'].astype(float)
     df['Время исполнения (сек)'] = df['Время исполнения (сек)'].round()
@@ -360,7 +363,7 @@ def start_single_branch(branch_name: str,  values_first_part: dict, values_secon
     web = Web()
     web.run()
     web.get('https://cabinet.stat.gov.kz/')
-    logger.info('Check-1')
+
     web.wait_element('//*[@id="idLogin"]')
     web.find_element('//*[@id="idLogin"]').click()
 
@@ -373,7 +376,6 @@ def start_single_branch(branch_name: str,  values_first_part: dict, values_secon
     sleep(0.5)
     web.find_element('//*[@id="loginButton"]').click()
 
-    logger.info('Check-2')
     ecp_auth = ''
     ecp_sign = ''
     for files in os.listdir(os.path.join(ecp_paths, branch_name)):
@@ -594,9 +596,10 @@ def get_store_name(branch_1c):
     return df_[df_.columns[0]].iloc[0]
 
 
-def get_single_report(name_up: str, name_down: str):
+def get_single_report(short_name_: str, name_up: str, name_down: str):
 
     try:
+
         app = Odines()
         app.run()
 
@@ -640,9 +643,7 @@ def get_single_report(name_up: str, name_down: str):
 
         # all_branches = get_all_branches()
 
-        short_name = get_store_name(name_down)
-
-        print(name_down, '|||', short_name)
+        print(name_down, '|||', short_name_)
 
         print(name_up, name_down, sep=' | ', end='')
 
@@ -678,19 +679,19 @@ def get_single_report(name_up: str, name_down: str):
         else:
             print(f' - GOOD",')
         print()
-        return ['', '']
+        return ['sucess', '', '']
         # app.find_element({"title": "ОК", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
         #
         # app.find_element({"title": "Заполнить", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
         #
         # checker = False
         #
-        # for _ in range(100):
+        # for _ in range(1000):
         #     with suppress(Exception):
         #         app.find_element({"title": "", "class_name": "", "control_type": "DataGrid", "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=10).click()
         #         checker = True
         #         break
-        #     sleep(30)
+        #     sleep(10)
         #
         # if checker:
         #     app.navigate("Файл", "Сохранить как...")
@@ -708,11 +709,12 @@ def get_single_report(name_up: str, name_down: str):
         #                       "visible_only": True, "enabled_only": True, "found_index": 0}).click()
         #
         #     app.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
-        #                       "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(os.path.join(saving_path_1c, short_name), app.keys.ENTER)
+        #                       "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(os.path.join(saving_path_1c, short_name_), app.keys.ENTER)
         #
-        #     return [os.path.join(saving_path_1c, short_name + '.xlsx), short_name]
-    except:
-        pass
+        #     return ['success', os.path.join(saving_path_1c, short_name_ + '.xlsx), '']
+
+    except Exception as err:
+        return ['error', '', 'err']
 
 
 def edit_main_excel_file(number: str, filepath: str):
@@ -781,7 +783,7 @@ def edit_main_excel_file(number: str, filepath: str):
     main_sheet[f'{quarter}29'].value = workers_fired
 
     main_excel.app.calculate()
-    main_excel.save(os.path.join(saving_path, '1Т Заполненный файл.xlsx'))
+    main_excel.save(filled_file)
     main_excel.close()
 
     os.system('taskkill /im excel.exe /f')
@@ -791,16 +793,34 @@ def edit_main_excel_file(number: str, filepath: str):
 
 def open_1c_zup():
 
-    all_branches = pd.read_excel('real_mopping.xlsx')
+    all_branches = pd.read_excel(mapping_file)
     c = 0
 
-    all_excels = dict()
+    all_excels_ = dict()
 
     print()
 
+    pattern = r'\d+'
+
+    # ! TODO
+    # ! branches_to_execute
+
     for ind in range(len(all_branches)):
 
-        pattern = r'\d+'
+        try:
+            short_name_ = get_store_name(all_branches['Низ'].iloc[ind])
+        except:
+            try:
+                short_name_ = get_store_name(all_branches['Низ'].iloc[ind].replace('С', 'C'))
+            except:
+                print(f"Branch {all_branches['Низ'].iloc[ind]} is dead")
+                continue
+
+        branches_to_execute = get_data_to_execute()
+
+        # if short_name_.replace('Торговый зал ', '') not in list(branches_to_execute['short_name']):
+        #     print('skipped', short_name_)
+        #     continue
 
         numbers = re.findall(pattern, all_branches['Низ'].iloc[ind])
         # with suppress(Exception):
@@ -809,25 +829,35 @@ def open_1c_zup():
 
         if 'алмат' in all_branches['Низ'].iloc[ind].lower() and int(numbers[0]) <= 39 and 'центр' not in all_branches['Низ'].iloc[ind].lower():
             print(numbers, '|||', all_branches['Низ'].iloc[ind])
+            # continue
             c += 1
 
-            # edit_main_excel_file(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С\Торговый зал АФ №21.xlsx', '21')
-            # break
-            # continue
+            start_time_ = time.time()
 
-            filepath, short_name = get_single_report(all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
-            # short_name = f'Торговый зал АФ №21' # ? To be removed
-            filepath = ind
-            all_excels.update({short_name: [filepath, numbers[0]]})
+            insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=str(all_branches['Низ'].iloc[ind]), short_name=str(short_name_).replace('Торговый зал ', ''),
+                              executor_name=str(ip_address), status_='', status_1c='processing', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, all_branches['Низ'].iloc[ind]))
+            try:
+                status_, filepath, error_ = get_single_report(short_name_, all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
 
-    return all_excels
+                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=all_branches['Низ'].iloc[ind], short_name=short_name_.replace('Торговый зал ', ''),
+                                  executor_name=ip_address, status_='', status_1c=status_, error_reason=error_, error_saved_path='', execution_time=round(time.time() - start_time_), ecp_path_=os.path.join(ecp_paths, all_branches['Низ'].iloc[ind]))
+
+                # filepath = ind
+                all_excels_.update({short_name_: [filepath, numbers[0]]})
+
+            except Exception as error__:
+
+                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=all_branches['Низ'].iloc[ind], short_name=short_name_.replace('Торговый зал ', ''),
+                                  executor_name=ip_address, status_='', status_1c='failed 1C', error_reason=str(error__), error_saved_path='', execution_time=round(time.time() - start_time_), ecp_path_=os.path.join(ecp_paths, all_branches['Низ'].iloc[ind]))
+
+    return all_excels_
 
 
 def get_data_to_fill(short_name_, col_):
 
     os.system('taskkill /im excel.exe /f')
 
-    main_excel = xw.Book('temp.xlsx', corrupt_load=True) # * os.path.join(saving_path, '1Т Заполненный файл.xlsx')
+    main_excel = xw.Book(filled_file, corrupt_load=True) # * os.path.join(saving_path, '1Т Заполненный файл.xlsx')
 
     needed_sheet_name = None
     print('col:', col_)
@@ -871,59 +901,66 @@ def get_data_to_fill(short_name_, col_):
         else:
             left = round(main_sheet.range(f'{col_}{row}').value) if main_sheet.range(f'{col_}{row}').value is not None else None
             right = round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value) if main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value is not None else None
+
             first_part_.update({first_vals.get(ind_): [left, right]})
 
     for ind_, row in enumerate(['21', '29', '30', '31']):
 
         left = round(main_sheet.range(f'{col_}{row}').value) if main_sheet.range(f'{col_}{row}').value is not None else None
         right = round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value) if main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value is not None else None
+
         second_part_.update({second_vals.get(ind_): [left, right]})
 
     main_excel.close()
 
     os.system('taskkill /im excel.exe /f')
 
-    return first_part_, second_part_
+    return needed_sheet_name, first_part_, second_part_
+
+
+def dispatcher():
+
+    df = pd.read_excel(main_excel_file)
 
 
 if __name__ == '__main__':
 
     sql_create_table()
 
+    dispatcher()
+
     all_excels = open_1c_zup()
     exit()
     # edit_main_excel_file(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С\Торговый зал АФ №21.xlsx', '21')
 
     col = 'F' # None
-    # for key, val in all_excels.items():
-    #     col = edit_main_excel_file(key, val[1])
+    for key, val in all_excels.items():
+        col = edit_main_excel_file(key, val[1])
 
-    for key, vals in all_excels.items():
+    for branch, vals in all_excels.items():
         if '~' not in vals:
-            if '21' not in key:
+            if '21' not in branch:
                 continue
-            print(key, vals)
+            print(branch, vals)
 
-            first_part, second_part = get_data_to_fill(key, col)
+            short_name, first_part, second_part = get_data_to_fill(branch, col)
 
             print('-------------')
             print(first_part, second_part, sep='\n')
 
-            start_single_branch(key, first_part, second_part)
+            start_time = time.time()
+            insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
+                              executor_name=ip_address, status_='processing', status_1c='success', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, branch))
+            try:
+                status, error_saved_path, error = start_single_branch(branch, first_part, second_part)
 
-            # start_time = time.time()
-            # insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
-            #                   executor_name=ip_address, status_='processing', error_reason='', error_saved_path='', execution_time='', ecp_path_=os.path.join(ecp_paths, branch_))
-            # try:
-            #     status, error_saved_path, error = start_single_branch(os.path.join(ecp_paths, branch_), branch_, first, second)
-            #
-            #     insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
-            #                       executor_name=ip_address, status_=status, error_reason=error, error_saved_path=error_saved_path, execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch_))
-            #
-            # except Exception as error:
-            #
-            #     insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch,
-            #                       executor_name=ip_address, status_='failed with error', error_reason=str(error), error_saved_path='', execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch_))
+                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
+                                  executor_name=ip_address, status_=status, status_1c='success', error_reason=error, error_saved_path=error_saved_path, execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch))
+
+            except Exception as error:
+
+                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
+                                  executor_name=ip_address, status_='failed with error', status_1c='success', error_reason=str(error), error_saved_path='', execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch))
 
 
 

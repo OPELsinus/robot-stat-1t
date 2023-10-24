@@ -70,6 +70,8 @@ config_data = json_read(config_path)
 chat_id = config_data['chat_id']
 ecp_paths = config_data['ecp_paths']
 main_excel_file = config_data['main_excel_file']
+mapping_file = config_data['mapping_file']
+filled_file = config_data['filled_file']
 
 ip_address = socket.gethostbyname(socket.gethostname())
 
