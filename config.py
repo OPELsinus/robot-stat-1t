@@ -65,13 +65,14 @@ postgre_port = global_env_data['postgre_port']
 
 # ? PROJECT
 robot_name = 'robot-stat-1t'  # ! FIXME
-config_path = local_path.joinpath(f'.agent\\{robot_name}\\config.json')
+config_path = global_path.joinpath(f'.agent\\{robot_name}\\{socket.gethostbyname(socket.gethostname())}\\config.json')
 config_data = json_read(config_path)
 chat_id = config_data['chat_id']
 ecp_paths = config_data['ecp_paths']
-main_excel_file = config_data['main_excel_file']
 mapping_file = config_data['mapping_file']
-filled_file = config_data['filled_file']
+print(config_path)
+main_excel_files = config_data['main_excel_files']
+filled_files = config_data['filled_files']
 
 ip_address = socket.gethostbyname(socket.gethostname())
 
