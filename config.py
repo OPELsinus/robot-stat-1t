@@ -80,6 +80,7 @@ saving_path = global_path.joinpath(f".agent\\{robot_name}\\Output")
 saving_path.mkdir(exist_ok=True, parents=True)
 saving_path_1c = global_path.joinpath(f".agent\\{robot_name}\\Output\\Выгрузка 1Т из 1С")
 saving_path_1c.mkdir(exist_ok=True, parents=True)
+reports_saving_path = r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Отчёты 1Т'
 
 download_path = Path.home().joinpath('downloads')
 db_host = global_env_data['postgre_ip']
