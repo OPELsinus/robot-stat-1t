@@ -30,13 +30,14 @@
 # #
 # #
 
-# import os
-#
-# from openpyxl import load_workbook
-# from openpyxl.formula import translate
-#
-# import xlwings as xw
-#
+import os
+from copy import copy
+
+from openpyxl import load_workbook
+from openpyxl.formula import translate
+
+import xlwings as xw
+
 # upper_part_1 = {
 #     'formula1': '=RC[-1]',
 #     'formula2': '=(RC[-1]+RC[-3])/2',
@@ -111,13 +112,6 @@
 #
 #         app = xw.apps.active.books.active.sheets(sheet_)
 #
-#         # sheet = wb.sheets[sheet_]
-#
-#         # if 'ФКС1' not in str(sheet_):
-#         #     continue
-#
-#         # sheet = book[sheet_]
-#
 #         for ind, col in enumerate('CEGI'):
 #             for row_ in [[3, 9]]:
 #                 for row in range(row_[0], row_[1]):
@@ -133,51 +127,59 @@
 #     workbook.save(os.path.join(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t', file))
 #
 #     os.system('taskkill /im excel.exe /f')
+#
+# #
 
-import xlwings as xw
+
+import openpyxl
 import os
 
-os.system('taskkill /im excel.exe /f')
 
-source_wb = xw.Book(os.path.join(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\1Т шаблон.xlsx'), corrupt_load=True)
-source_sheet_name = 'Лист1'
-source_sheet = source_wb.sheets[source_sheet_name]
-
-for file in os.listdir(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Файлы сбора'):
-
-    main_excel = xw.Book(os.path.join(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Файлы сбора', file), corrupt_load=True)
-
-    for sheet in main_excel.sheets:
-        print(sheet)
-        main_sheet = main_excel.sheets[sheet]
-
-        # source_sheet.api.Copy()
-        main_sheet.Rows('A1:Z50').Delete()
-        source_range = source_sheet.range(('A', 1), ('I', source_sheet.api.UsedRange.Columns.Count))
-
-        source_range.copy(destination=main_sheet.range('A1'))
-        # main_sheet.range('A1').api.PasteSpecial()
-
-        # print(file, sheet, main_sheet['A4'].value, sep=' | ')
-    main_excel.save(os.path.join(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Файлы сбора1', file))
-    main_excel.close()
-    break
-
-source_wb.close()
+def copy_sheet_contents(source_sheet, target_sheet):
+    for row in source_sheet.iter_rows():
+        for cell in row:
+            new_cell = target_sheet.cell(
+                row=cell.row, column=cell.column, value=cell.value
+            )
+            if cell.has_style:
+                new_cell.font = copy(cell.font)
+                new_cell.border = copy(cell.border)
+                new_cell.fill = copy(cell.fill)
+                new_cell.number_format = copy(cell.number_format)
+                new_cell.protection = copy(cell.protection)
+                new_cell.alignment = copy(cell.alignment)
 
 
+def replace_sheets_with_template(template_path, target_files):
+    # Load the template workbook and sheet
+    template_wb = openpyxl.load_workbook(template_path)
+    template_sheet = template_wb.active
+
+    for file_path in target_files:
+        target_wb = openpyxl.load_workbook(file_path)
+
+        sheet_names = target_wb.sheetnames
+        for sheet_name in sheet_names:
+            # Remove the existing sheet
+            target_wb.remove(target_wb[sheet_name])
+            # Create a new sheet with the same name
+            new_sheet = target_wb.create_sheet(title=sheet_name)
+            # Copy contents from template to the new sheet
+            copy_sheet_contents(template_sheet, new_sheet)
+
+        # Save the modified workbook
+        target_wb.save(file_path)
+        print(f"Processed {file_path}")
 
 
+target_files = []
+
+for file in os.listdir(r"\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Файлы сбора"):
+    target_files.append(
+        os.path.join(r"\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Файлы сбора", file)
+    )
 
 
+template_path = r"\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\1Т шаблон.xlsx"
 
-
-
-
-
-
-
-
-
-
-
+replace_sheets_with_template(template_path, target_files)

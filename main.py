@@ -4,6 +4,7 @@ import random
 import re
 import shutil
 import time
+import traceback
 from contextlib import suppress
 from math import floor
 from time import sleep
@@ -17,7 +18,7 @@ from openpyxl.styles import PatternFill, Alignment
 from pywinauto import keyboard
 import xlwings as xw
 
-from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, saving_path_1c, download_path, ecp_paths, main_excel_files, adb_db_password, adb_db_name, adb_db_username, adb_ip, adb_port, mapping_file, filled_files, reports_saving_path
+from config import logger, tg_token, chat_id, db_host, robot_name, db_port, db_name, db_user, db_pass, ip_address, saving_path, saving_path_1c, download_path, ecp_paths, main_excel_files, adb_db_password, adb_db_name, adb_db_username, adb_ip, adb_port, mapping_file, filled_files, reports_saving_path, main_executor
 from core import Odines
 from tools.app import App
 from tools.web import Web
@@ -40,6 +41,18 @@ def sql_create_table():
             ecp_path text
             )
         '''
+    c = conn.cursor()
+    c.execute(table_create_query)
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def sql_drop_table():
+    conn = psycopg2.connect(host=db_host, port=db_port, database=db_name, user=db_user, password=db_pass)
+    table_create_query = f'''
+        drop TABLE ROBOT.{robot_name.replace("-", "_")}'''
     c = conn.cursor()
     c.execute(table_create_query)
 
@@ -101,9 +114,9 @@ def get_data_to_execute():
     conn = psycopg2.connect(host=db_host, port=db_port, database=db_name, user=db_user, password=db_pass)
     table_create_query = f'''
             SELECT * FROM ROBOT.{robot_name.replace("-", "_")}
-            where (status_1c != 'success' and status_1c != 'processing')
+            where (status_1c != 'success' and status_1c != 'error')
             and (executor_name is NULL or executor_name = '{ip_address}')
-            order by started_time desc
+            order by RANDOM()
             '''
     cur = conn.cursor()
     cur.execute(table_create_query)
@@ -119,7 +132,7 @@ def get_data_to_execute():
     return df1
 
 
-def insert_data_in_db(started_time: str, store_name: str, short_name: str, executor_name: str, status_: str, status_1c: str, error_reason: str, error_saved_path: str, execution_time: int, ecp_path_: str):
+def insert_data_in_db(started_time: str, store_name: str, short_name: str, executor_name: str or None, status_: str, status_1c: str, error_reason: str, error_saved_path: str, execution_time: int, ecp_path_: str):
 
     conn = psycopg2.connect(host=db_host, port=db_port, database=db_name, user=db_user, password=db_pass)
 
@@ -140,7 +153,7 @@ def insert_data_in_db(started_time: str, store_name: str, short_name: str, execu
         started_time,
         ended_time,
         store_name,
-        short_name,
+        short_name.replace('№', '').replace(' ', ''),
         executor_name,
         status_,
         status_1c,
@@ -338,7 +351,7 @@ def wait_image_loaded(name):
 def save_and_send(web, save, ecp_sign):
 
     print('Saving and Sending')
-    sleep(1000)
+    # sleep(1000)
     if save:
         web.execute_script_click_xpath("//span[text() = 'Сохранить']")
         sleep(1)
@@ -350,7 +363,7 @@ def save_and_send(web, save, ecp_sign):
     errors = web.find_elements('//*[@id="statflc"]//a', timeout=15)
     errors_count = 0
     for errorik in errors:
-        print(f"ERRORS IN STAT: {errorik.get_attr('title').lower()}")
+        # print(f"ERRORS IN STAT: {errorik.get_attr('title').lower()}")
         if 'допустимый' not in errorik.get_attr('title').lower():
             errors_count += 1
 
@@ -399,7 +412,7 @@ def save_and_send(web, save, ecp_sign):
                     break
     else:
         print('GOVNO OSHIBKA VYLEZLA')
-        sleep(10000)
+        # sleep(10000)
         raise Exception('ERROR IN EXCEL: Разные цифры')
 
 
@@ -555,6 +568,11 @@ def start_single_branch(branch_name: str,  values_first_part: dict, values_secon
 
             web.find_element('//*[@id="createReportId-btnIconEl"]').click()
 
+            sleep(1)
+
+            with suppress(Exception):
+                web.execute_script_click_xpath("//a//*[text()='Да']")
+
             # ? Switch to the second window
             sleep(7)
             print('switched')
@@ -613,19 +631,21 @@ def start_single_branch(branch_name: str,  values_first_part: dict, values_secon
             sleep(1)
             print('-----')
 
+            # spisochnoe_chislo = int(web.find_element('//*[@id="1"]/td[3]').get_attr('text'))
+
             for row, values in values_second_part.items():
 
                 if values[0] is not None and (float(values[0]) > 0):
                     web.find_element(f'(//*[@id="{row}"]/td[3])[2]').click()
                     print(f'Writing {round(values[0], 1)} at {row} | {values}')
                     web.find_element(f'(//*[@id="{row}_col_2"])').type_keys(round(values[0], 1))
-                    sleep(10)
+                    sleep(1)
 
                 if values[1] is not None and (float(values[1]) > 0):
                     web.find_element(f'(//*[@id="{row}"]/td[4])[2]').click()
-                    print(f'Writing {round(values[1], 1)} at {row} | {values}')
+                    print(f'Writing1 {round(values[1], 1)} at {row} | {values}')
                     web.find_element(f'(//*[@id="{row}_col_3"])').type_keys(round(values[1], 1))
-                    sleep(10)
+                    sleep(1)
 
             keyboard.send_keys('{TAB}')
             # ? Last page
@@ -660,6 +680,165 @@ def start_single_branch(branch_name: str,  values_first_part: dict, values_secon
 
         print('Srok istek')
         return ['failed', saved_path, 'Срок ЭЦП истёк']
+
+
+def get_goal_spicochnaya_chislen(branch_name):
+    def pass_later():
+        if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=1.5):
+            print('PASSING LATER')
+            web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
+
+    print('Started web')
+
+    ecp_auth = ''
+    ecp_sign = ''
+    for file in os.listdir(os.path.join(ecp_paths, branch_name)):
+
+        if 'AUTH' in file:
+            ecp_auth = os.path.join(os.path.join(ecp_paths, branch_name), file)
+        if 'GOST' in file:
+            ecp_sign = os.path.join(os.path.join(ecp_paths, branch_name), file)
+    print(ecp_auth, '|', ecp_sign)
+    web = Web()
+    web.run()
+    web.get('https://cabinet.stat.gov.kz/')
+    logger.info('Check-1')
+
+    logger.info('refreshed')
+
+    proverka_ecp(web=web)
+
+    web.wait_element('//*[@id="idLogin"]')
+    web.find_element('//*[@id="idLogin"]').click()
+
+    proverka_ecp(web=web)
+
+    # * --- deprecated (maybe useful in future)
+    # web.wait_element('//*[@id="button-1077-btnEl"]')
+    # web.find_element('//*[@id="button-1077-btnEl"]').click()
+    # * ---
+    # proverka_ecp(web=web)
+    print()
+    # web.wait_element('//*[@id="lawAlertCheck"]')
+    # web.find_element('//*[@id="lawAlertCheck"]').click()
+    web.execute_script_click_xpath("//input[@id='lawAlertCheck']")
+
+    time.sleep(0.5)
+    web.find_element('//*[@id="loginButton"]').click()
+
+    logger.info('Check-2')
+
+    time.sleep(1)
+
+    # send_message_to_tg(tg_token, chat_id, f"Started ECP, {datetime.datetime.now()}")
+    sign_ecp(ecp_auth)
+    # send_message_to_tg(tg_token, chat_id, f"Finished ECP, {datetime.datetime.now()}")
+
+    logged_in = web.wait_element('//*[@id="idLogout"]/a')
+
+    store = branch_name.split('\\')[-1]
+    # sleep(1000)
+    if logged_in:
+        if web.find_element("//a[text() = 'Выйти']"):
+
+            if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=5):
+                try:
+                    web.execute_script_click_xpath("//span[contains(text(), 'Пройти позже')]")
+                except:
+                    save_screenshot(store)
+
+            logger.info('Check0')
+            if web.wait_element('//*[@id="dontAgreeId-inputEl"]', timeout=5):
+                web.find_element('//*[@id="dontAgreeId-inputEl"]').click()
+                sleep(0.3)
+                web.find_element('//*[@id="saveId-btnIconEl"]').click()
+                sleep(1)
+
+                # * --- Deprecated (maybe useful)
+                # web.find_element('//*[@id="ext-gen1893"]').click()
+                # web.find_element('//*[@id="boundlist-1327-listEl"]/ul/li').click()
+                # * ---
+
+                web.wait_element('//*[@id="keyCombo-inputEl"]')
+
+                web.execute_script_click_xpath("//*[@id='keyCombo-inputEl']/../following-sibling::td//div")
+
+                web.find_element("//li[contains(text(), 'Персональный компьютер')]").click()
+                sleep(1.5)
+
+                web.execute_script_click_xpath("//span[contains(text(), 'Продолжить')]")
+
+                print('Done lol')
+                sign_ecp(ecp_sign)
+                print('Finished done lol')
+                try:
+                    if web.wait_element("//span[contains(text(), 'Пройти позже')]", timeout=5):
+                        web.find_element("//span[contains(text(), 'Пройти позже')]").click()
+
+                except:
+                    pass
+
+            # web.wait_element('//*[@id="radio-1131-boxLabelEl"]')
+
+            pass_later()
+            print('OTCHETY')
+            web.wait_element("//span[contains(text(), 'Мои отчёты')]")
+            web.execute_script_click_xpath("//span[contains(text(), 'Мои отчёты')]")
+
+            # ? Check if 1Т exists
+
+            pass_later()
+
+            # * ------- Uncomment -------
+            wait_loading_1t(web, store)
+
+            web.find_element('//*[@id="createReportId-btnIconEl"]').click()
+
+            sleep(1)
+
+            with suppress(Exception):
+                web.execute_script_click_xpath("//a//*[text()='Да']")
+
+            # ? Switch to the second window
+            sleep(7)
+            print('switched')
+            web.driver.switch_to.window(web.driver.window_handles[-1])
+
+            web.find_element('/html/body/div[1]').click()
+            web.wait_element('//*[@id="td_select_period_level_1"]/span')
+            web.execute_script_click_js("#btn-opendata")
+            sleep(0.3)
+
+            if web.get_element_display('/html/body/div[7]') == 'block':
+
+                web.find_element('/html/body/div[7]/div[11]/div/button[2]').click()
+
+                saved_path = save_screenshot(branch_name)
+                web.close()
+                web.quit()
+
+                print('Return that shit')
+                return ['failed', saved_path, 'Выскочила ошиПочка']
+
+            web.wait_element('//*[@id="sel_statcode_accord"]/div/p/b[1]', timeout=100)
+            web.execute_script_click_js("body > div:nth-child(16) > div.ui-dialog-buttonpane.ui-widget-content.ui-helper-clearfix > div > button:nth-child(1) > span")
+
+            web.wait_element('//*[@id="sel_rep_accord"]/h3[1]/a')
+
+            # ? Open new report to fill it
+
+            print('Clicking1')
+            # web.execute_script_click_js("body > div:nth-child(18) > div.ui-dialog-buttonpane.ui-widget-content.ui-helper-clearfix > div > button:nth-child(1)")
+            web.execute_script_click_xpath('/html/body/div[17]/div[11]/div/button[1]/span')
+
+            web.wait_element("//a[contains(text(), 'Страница 2')]", timeout=10)
+            web.find_element("//a[contains(text(), 'Страница 2')]").click()
+
+            print('-----')
+
+            spisochnoe_chislo = int(web.find_element('(//*[@id="1"]/td[3])[2]').get_attr('text'))
+
+            return spisochnoe_chislo
 
 
 def get_all_branches():
@@ -705,12 +884,17 @@ def get_single_report(short_name_: str, name_up: str, name_down: str):
 
     try:
 
-        app = Odines()
-        app.run()
+        # app = Odines()
+        app = Odines(
+            base="zup_mcc",
+            path=r"C:\Program Files\1cv8\8.3.16.1148\bin\1cv8.exe",
+        )
+        app.auth()
+        # app.run()
 
         print('started navigating')
 
-        app.navigate("Файл", "Открыть...")
+        app.open("Файл", "Открыть...")
 
         print('navigated')
 
@@ -722,7 +906,7 @@ def get_single_report(short_name_: str, name_up: str, name_down: str):
                            "visible_only": True, "enabled_only": True, "found_index": 0}).click()
 
         app1.find_element({"title": "Имя файла:", "class_name": "Edit", "control_type": "Edit",
-                           "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\РегламентированныйОтчетФорма1ТГодовая.erf', app.keys.ENTER)
+                           "visible_only": True, "enabled_only": True, "found_index": 0}).type_keys(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\РегламентированныйОтчетФорма1ТКвартальная_на тест.erf', app.keys.ENTER)
 
         if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
                              "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1):
@@ -734,8 +918,12 @@ def get_single_report(short_name_: str, name_up: str, name_down: str):
         first_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
                                         "visible_only": True, "enabled_only": True, "found_index": 0})
 
-        second_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
-                                         "visible_only": True, "enabled_only": True, "found_index": 1})
+        try:
+            second_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+                                             "visible_only": True, "enabled_only": True, "found_index": 1}, timeout=5)
+        except:
+            second_input = app.find_element({"title": "", "class_name": "", "control_type": "Edit",
+                                             "visible_only": True, "enabled_only": True, "found_index": 2}, timeout=5)
 
         first_input.click()
 
@@ -784,6 +972,7 @@ def get_single_report(short_name_: str, name_up: str, name_down: str):
         second_input.type_keys("{BACKSPACE}")
         second_input.type_keys(name_down.strip(), protect_first=True)
 
+        second_input.type_keys("{ENTER}")
         if app.wait_element({"title": "1С:Предприятие", "class_name": "V8NewLocalFrameBaseWnd", "control_type": "Window",
                              "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1.5):
             app.find_element({"title": "Нет", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
@@ -795,30 +984,55 @@ def get_single_report(short_name_: str, name_up: str, name_down: str):
             print(f' - GOOD",')
             logger.info(f'{name_up} | {name_down} - GOOD')
         print()
+
+        # year_ = int(str(app.find_element({"title_re": ".* г.", "class_name": "", "control_type": "Text",
+        #                                   "visible_only": True, "enabled_only": True, "found_index": 0}).element.element_info.rich_text).replace(' г.', ''))
+        #
+        # if int(datetime.date.today().year) < year_:
+        #     app.find_element({"title": "", "class_name": "", "control_type": "Button",
+        #                       "visible_only": True, "enabled_only": True, "found_index": 2}).click()
+        # if int(datetime.date.today().year) > year_:
+        #     app.find_element({"title": "", "class_name": "", "control_type": "Button",
+        #                       "visible_only": True, "enabled_only": True, "found_index": 3}).click()
+
         # return ['sucess', '', '']
-        app.find_element({"title": "ОК", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
 
+        if app.wait_element({"class_name": "", "control_type": "ListItem",
+                             "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=1):
+            els = app.find_elements({"class_name": "", "control_type": "ListItem", "visible_only": True, "enabled_only": True}, timeout=10)
+            for el in els:
+                el.click()
+                print('CLICKED')
+                break
+        print('CLICKED OK')
+        with suppress(Exception):
+            app.find_element({"title": "ОК", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=15).click()
+        print('CLICKED FILL')
         app.find_element({"title": "Заполнить", "class_name": "", "control_type": "Button", "visible_only": True, "enabled_only": True, "found_index": 0}).click()
-
+        print('CLICKED AFTER FILL')
         checker = False
 
-        for _ in range(1000):
+        for _ in range(3000):
             with suppress(Exception):
                 app.find_element({"title": "", "class_name": "", "control_type": "DataGrid", "visible_only": True, "enabled_only": True, "found_index": 0}, timeout=10).click()
                 checker = True
                 break
-            sleep(10)
+            sleep(1)
+        print('CHECKER', checker)
 
         if checker:
-
-            app.navigate("Файл", "Сохранить как...")
+            print('OPENING')
+            app.open("Файл", "Сохранить как...")
+            print('OPENING1')
 
             app.wait_element({"title": "Сохранение", "class_name": "#32770", "control_type": "Window",
                               "visible_only": True, "enabled_only": True, "found_index": 0})
 
+            print('OPENING2')
             app.find_element({"title": "Тип файла:", "class_name": "AppControlHost", "control_type": "ComboBox",
                               "visible_only": True, "enabled_only": True, "found_index": 0}).click()
 
+            print('OPENING3')
             app.find_element({"title": "Лист Excel2007-... (*.xlsx)", "class_name": "", "control_type": "ListItem",
                               "visible_only": True, "enabled_only": True, "found_index": 0}).click()
 
@@ -847,7 +1061,8 @@ def get_single_report(short_name_: str, name_up: str, name_down: str):
             return ['success', os.path.join(saving_path_1c, f'{short_name_}.xlsx'), '']
 
     except Exception as err:
-        return ['error', '', str(err)]
+        traceback.print_exc()
+        return ['error', '', traceback.format_exc()]
 
 
 def edit_main_excel_file(filepath__: str, branch_name: str, filepath: str, number: str):
@@ -869,12 +1084,12 @@ def edit_main_excel_file(filepath__: str, branch_name: str, filepath: str, numbe
     if needed_sheet_name is None:
         main_excel.close()
         return None
-    else:
-        # needed_sheet_name = needed_sheet_name.name
-        main_excel.close()
-        #
+    # else:
+    #     needed_sheet_name = needed_sheet_name.name
+        # main_excel.close()
+
         # return needed_sheet_name
-        return 'H'
+        # return 'H'
 
     # * Comment ELSE in the beggining of filling excels
 
@@ -955,6 +1170,20 @@ def edit_main_excel_file(filepath__: str, branch_name: str, filepath: str, numbe
     main_sheet[f'{quarter}{var_21}'].value = workers_hired
     main_sheet[f'{quarter}{var_29}'].value = workers_fired
 
+    # Когда заполняем первый квартал, Списочная численность неизвестна, поэтому заходим на портал и берём их цифру
+    with suppress(Exception):
+        if quarter == 'B':
+            for key_ in ['20']:
+
+                key = int(key_)
+
+                if main_sheet[f'A34'].value is None:
+                    key -= 1
+
+                if main_sheet.range(f'{col_}{key}').value is None:
+                    goal_num = get_goal_spicochnaya_chislen(branch_name)
+                    main_sheet.range(f'{col_}{key}').value = goal_num
+
     main_excel.app.calculate()
     print(os.path.join(filled_files, filepath__))
     main_excel.save(os.path.join(filled_files, filepath__))
@@ -967,40 +1196,25 @@ def edit_main_excel_file(filepath__: str, branch_name: str, filepath: str, numbe
 
 def open_1c_zup():
 
-    all_branches = pd.read_excel(mapping_file)
-    c = 0
+    all_branches = get_data_to_execute()
 
     all_excels_ = []
 
-    print()
-
     pattern = r'\d+'
 
-    # ! TODO
-    # ! branches_to_execute
-
-    all_branches = all_branches.drop_duplicates()
-
-    checkus = False
     aa = []
 
-    # if ip_address == '10.70.2.11':
-    # all_branches = all_branches[::-1]
-    if ip_address == '10.70.2.2':
-        all_branches = all_branches[::2]
-    if ip_address == '10.70.2.9':
-        all_branches = all_branches[1::2]
-
     for ind in range(len(all_branches)):
-        print(f"Started {all_branches['Низ'].iloc[ind]}", end=' ')
+        print(f"Started {all_branches['full_name'].iloc[ind]}", end=' ')
         try:
-            short_name_ = get_store_name(all_branches['Низ'].iloc[ind])
+            short_name_ = get_store_name(all_branches['full_name'].iloc[ind])
         except:
             try:
-                short_name_ = get_store_name(all_branches['Низ'].iloc[ind].replace('С', 'C'))
+                short_name_ = get_store_name(all_branches['full_name'].iloc[ind].replace('С', 'C'))
             except Exception as errorkin:
-                print(f"Branch {all_branches['Низ'].iloc[ind]} is dead: {errorkin}")
-                logger.info(f"{datetime.datetime.now()} | Branch {all_branches['Низ'].iloc[ind]} is dead: {errorkin}")
+                traceback.print_exc()
+                print(f"Branch {all_branches['full_name'].iloc[ind]} is dead: {errorkin}")
+                logger.info(f"{datetime.datetime.now()} | Branch {all_branches['full_name'].iloc[ind]} is dead: {errorkin}")
                 continue
 
         if short_name_ == 'Торговый зал СТМ 5АСФ':
@@ -1018,10 +1232,10 @@ def open_1c_zup():
 
         branches_to_execute = get_data_to_execute()
 
-        numbers = re.findall(pattern, all_branches['Низ'].iloc[ind])
+        numbers = re.findall(pattern, all_branches['full_name'].iloc[ind])
         # with suppress(Exception):
         #     if numbers[0] == '27':
-        #         print(all_branches['Низ'].iloc[ind])
+        #         print(all_branches['full_name'].iloc[ind])
         if True:
 
             # * -----
@@ -1039,24 +1253,76 @@ def open_1c_zup():
 
             start_time_ = time.time()
 
-            insert_data_in_db(started_time=datetime.datetime.now()   .strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=str(all_branches['Низ'].iloc[ind]), short_name=str(short_name_).replace('Торговый зал ', ''),
-                              executor_name=str(ip_address), status_='', status_1c='processing', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, all_branches['Низ'].iloc[ind]))
-            try:
-                status_, filepath, error_ = get_single_report(short_name_, all_branches['Верх'].iloc[ind], all_branches['Низ'].iloc[ind])
+            insert_data_in_db(started_time=datetime.datetime.now()   .strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=str(all_branches['full_name'].iloc[ind]), short_name=str(short_name_).replace('Торговый зал ', ''),
+                              executor_name=ip_address, status_='', status_1c='processing', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, all_branches['full_name'].iloc[ind]))
+            if True:
+                status_, filepath, error_ = get_single_report(short_name_, all_branches['full_name'].iloc[ind], all_branches['full_name'].iloc[ind])
 
-                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=all_branches['Низ'].iloc[ind], short_name=short_name_.replace('Торговый зал ', ''),
-                                  executor_name=ip_address, status_='', status_1c=status_, error_reason=error_, error_saved_path='', execution_time=round(time.time() - start_time_), ecp_path_=os.path.join(ecp_paths, all_branches['Низ'].iloc[ind]))
+                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=all_branches['full_name'].iloc[ind], short_name=short_name_.replace('Торговый зал ', ''),
+                                  executor_name=ip_address, status_='', status_1c=status_, error_reason=error_, error_saved_path='', execution_time=round(time.time() - start_time_), ecp_path_=os.path.join(ecp_paths, all_branches['full_name'].iloc[ind]))
 
                 # filepath = ind
-                all_excels_.append({short_name_: [filepath, short_name_.replace('Торговый зал ', ''), numbers[0]]})
+                try:
+                    all_excels_.append({short_name_: [filepath, short_name_.replace('Торговый зал ', ''), numbers[0]]})
+                except:
+                    all_excels_.append({short_name_: [filepath, short_name_.replace('Торговый зал ', ''), 0]})
 
-            except Exception as error__:
-
-                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=all_branches['Низ'].iloc[ind], short_name=short_name_.replace('Торговый зал ', ''),
-                                  executor_name=ip_address, status_='', status_1c='failed 1C', error_reason=str(error__), error_saved_path='', execution_time=round(time.time() - start_time_), ecp_path_=os.path.join(ecp_paths, all_branches['Низ'].iloc[ind]))
+            # except Exception as error__:
+            #     traceback.print_exc()
+            #     insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=all_branches['full_name'].iloc[ind], short_name=short_name_.replace('Торговый зал ', ''),
+            #                       executor_name=ip_address, status_='', status_1c='failed 1C', error_reason=str(error__), error_saved_path='', execution_time=round(time.time() - start_time_), ecp_path_=os.path.join(ecp_paths, all_branches['full_name'].iloc[ind]))
 
     print(len(aa))
     print(aa)
+    # sleep(10000)
+
+    return all_excels_
+
+
+def get_all_excels():
+
+    all_branches = get_all_data()
+
+    all_excels_ = []
+    all_downloaded_excels = []
+    pattern = r'\d+'
+
+    for reports in os.listdir(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С'):
+        all_downloaded_excels.append(reports.replace('.xlsx', ''))
+
+    for ind in range(len(all_branches)):
+        # print(f"Started {all_branches['full_name'].iloc[ind]}", end=' ')
+        # short_name_ = f"Торговый зал {all_branches['short_name'].iloc[ind]}"
+        try:
+            short_name_ = get_store_name(all_branches['full_name'].iloc[ind])
+        except:
+            try:
+                short_name_ = get_store_name(all_branches['full_name'].iloc[ind].replace('С', 'C'))
+            except Exception as errorkin:
+                # print(f"Branch {all_branches['full_name'].iloc[ind]} is dead: {errorkin}")
+                # logger.info(f"{datetime.datetime.now()} | Branch {all_branches['full_name'].iloc[ind]} is dead: {errorkin}")
+                continue
+
+        if short_name_ == 'Торговый зал СТМ 5АСФ':
+            short_name_ = 'Торговый зал АСФ №1'
+
+        # print(' | ', short_name_)
+
+        # found_ = True
+        # for reports in os.listdir(r'\\172.16.8.87\d\.rpa\.agent\robot-stat-1t\Output\Выгрузка 1Т из 1С'):
+        #     if reports.replace('.xlsx', '') == short_name_:
+        #         found_ = False
+        #         break
+        # if found_:
+        #     continue
+        numbers = re.findall(pattern, short_name_)
+        filepath = os.path.join(saving_path_1c, f'{short_name_}.xlsx')
+        # print(numbers)
+        try:
+            all_excels_.append({short_name_: [filepath, short_name_.replace('Торговый зал ', ''), numbers[0]]})
+        except:
+            all_excels_.append({short_name_: [filepath, short_name_.replace('Торговый зал ', ''), 1]})
+
     # sleep(10000)
 
     return all_excels_
@@ -1121,17 +1387,16 @@ def get_data_to_fill(filepath: str, short_name_: str, col_: str):
             left = round(main_sheet.range(f'{col_}{row}').value, 1) if main_sheet.range(f'{col_}{row}').value is not None else None
             right = round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value, 1) if main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value is not None else None
 
+            print('koks', col_, row, main_sheet.range(f'{col_}{row}').value, left, right)
             first_part_.update({first_vals.get(ind_): [left, right]})
 
     maxx_ = 0
 
-    for i in range(1, 5):
-        with suppress(Exception):
-            maxx_ = max(maxx_, first_part_.get(i)[0])
-    # print('MAXIMUS:', maxx_)
-    for i in range(1, 5):
-        # print({first_part_.get(i)[0]: [maxx_, first_part_.get(i)[1]]})
-        first_part_.update({i: [maxx_, first_part_.get(i)[1]]})
+    # for i in range(1, 5):
+    #     with suppress(Exception):
+    #         maxx_ = max(maxx_, first_part_.get(i)[0])
+    # for i in range(1, 5):
+    #     first_part_.update({i: [maxx_, first_part_.get(i)[1]]})
     #
     # if first_part_.get(5)[1] != first_part_.get(6)[1]:
     #     first_part_.update({5: [first_part_.get(5)[0], first_part_.get(6)[1]]})
@@ -1145,51 +1410,72 @@ def get_data_to_fill(filepath: str, short_name_: str, col_: str):
 
         left = round(main_sheet.range(f'{col_}{row}').value, 1) if main_sheet.range(f'{col_}{row}').value is not None else None
         right = round(main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value, 1) if main_sheet.range(f'{chr(ord(col_) + 1)}{row}').value is not None else None
-
+        print('spart', col_, row)
         second_part_.update({second_vals.get(ind_): [left, right]})
 
     main_excel.close()
 
     os.system('taskkill /im excel.exe /f')
-
+    print('first part:', first_part_)
     return sheet_name, first_part_, second_part_
 
 
 def dispatcher():
 
-    pass
+    with suppress(Exception):
+        sql_drop_table()
 
-    # df = pd.read_excel(main_excel_file)
+    sql_create_table()
+
+    all_branches = pd.read_excel(mapping_file)
+
+    all_branches = all_branches.drop_duplicates()
+
+    for ind in range(len(all_branches)):
+
+        print(f"Started {all_branches['Низ'].iloc[ind]}", end=' ')
+        try:
+            short_name_ = get_store_name(all_branches['Низ'].iloc[ind])
+        except:
+            try:
+                short_name_ = get_store_name(all_branches['Низ'].iloc[ind].replace('С', 'C'))
+            except Exception as errorkin:
+                print(f"Branch {all_branches['Низ'].iloc[ind]} is dead: {errorkin}")
+                logger.info(f"{datetime.datetime.now()} | Branch {all_branches['Низ'].iloc[ind]} is dead: {errorkin}")
+                continue
+
+        insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=str(all_branches['Низ'].iloc[ind]), short_name=str(short_name_).replace('Торговый зал ', ''),
+                          executor_name=None, status_='new', status_1c='new', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, all_branches['Низ'].iloc[ind]))
 
 
 if __name__ == '__main__':
 
-    if True:
+    try:
 
-        sql_create_table()
-
-        dispatcher()
-
-        all_excels = open_1c_zup()
-
-        # all_excels = [{'Торговый зал АФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №5.xlsx', 'АФ №5', '5']}, {'Торговый зал АФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №1.xlsx', 'АФ №1', '1']}, {'Торговый зал АФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №10.xlsx', 'АФ №10', '10']}, {'Торговый зал АФ №11': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №11.xlsx', 'АФ №11', '11']}, {'Торговый зал АФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №12.xlsx', 'АФ №12', '12']}, {'Торговый зал АФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №14.xlsx', 'АФ №14', '14']}, {'Торговый зал АФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №15.xlsx', 'АФ №15', '15']}, {'Торговый зал АФ №16': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №16.xlsx', 'АФ №16', '16']}, {'Торговый зал АФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №17.xlsx', 'АФ №17', '17']}, {'Торговый зал АФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №18.xlsx', 'АФ №18', '18']}, {'Торговый зал АФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №19.xlsx', 'АФ №19', '19']}, {'Торговый зал АФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №2.xlsx', 'АФ №2', '2']}, {'Торговый зал АФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №20.xlsx', 'АФ №20', '20']}, {'Торговый зал АФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №21.xlsx', 'АФ №21', '21']}, {'Торговый зал АФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №22.xlsx', 'АФ №22', '22']}, {'Торговый зал АФ №23': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №23.xlsx', 'АФ №23', '23']}, {'Торговый зал АФ №24': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №24.xlsx', 'АФ №24', '24']}, {'Торговый зал АФ №25': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №25.xlsx', 'АФ №25', '25']}, {'Торговый зал АФ №26': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №26.xlsx', 'АФ №26', '26']}, {'Торговый зал АФ №28': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №28.xlsx', 'АФ №28', '28']}, {'Торговый зал АФ №29': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №29.xlsx', 'АФ №29', '29']}, {'Торговый зал АФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №3.xlsx', 'АФ №3', '3']}, {'Торговый зал АФ №30': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №30.xlsx', 'АФ №30', '30']}, {'Торговый зал АФ №31': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №31.xlsx', 'АФ №31', '31']}, {'Торговый зал АФ №32': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №32.xlsx', 'АФ №32', '32']}, {'Торговый зал АФ №33': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №33.xlsx', 'АФ №33', '33']}, {'Торговый зал АФ №34': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №34.xlsx', 'АФ №34', '34']}, {'Торговый зал АФ №35': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №35.xlsx', 'АФ №35', '35']}, {'Торговый зал АФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №6.xlsx', 'АФ №6', '6']}, {'Торговый зал АФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №7.xlsx', 'АФ №7', '7']}, {'Торговый зал АФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №8.xlsx', 'АФ №8', '8']}, {'Торговый зал АФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №9.xlsx', 'АФ №9', '9']}, {'Торговый зал КФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №2.xlsx', 'КФ №2', '2']}, {'Торговый зал ЕКФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ЕКФ №1.xlsx', 'ЕКФ №1', '1']}, {'Торговый зал КПФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КПФ №1.xlsx', 'КПФ №1', '1']}, {'Торговый зал ФКС №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ФКС №1.xlsx', 'ФКС №1', '1']}, {'Торговый зал КЗФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КЗФ №1.xlsx', 'КЗФ №1', '1']}, {'Торговый зал ТФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №1.xlsx', 'ТФ №1', '1']}, {'Торговый зал ППФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №1.xlsx', 'ППФ №1', '1']}, {'Торговый зал ТЗФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТЗФ №1.xlsx', 'ТЗФ №1', '1']}, {'Торговый зал УКФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал УКФ №1.xlsx', 'УКФ №1', '1']}, {'Торговый зал ППФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №10.xlsx', 'ППФ №10', '10']}, {'Торговый зал ШФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №10.xlsx', 'ШФ №10', '10']}, {'Торговый зал ППФ №11': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №11.xlsx', 'ППФ №11', '11']}, {'Торговый зал ППФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №12.xlsx', 'ППФ №12', '12']}, {'Торговый зал ШФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №12.xlsx', 'ШФ №12', '12']}, {'Торговый зал ППФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №13.xlsx', 'ППФ №13', '13']}, {'Торговый зал ШФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №13.xlsx', 'ШФ №13', '13']}, {'Торговый зал АФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №13.xlsx', 'АФ №13', '13']}, {'Торговый зал ППФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №14.xlsx', 'ППФ №14', '14']}, {'Торговый зал ШФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №14.xlsx', 'ШФ №14', '14']}, {'Торговый зал ППФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №15.xlsx', 'ППФ №15', '15']}, {'Торговый зал ШФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №15.xlsx', 'ШФ №15', '15']}, {'Торговый зал АСФ №16': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №16.xlsx', 'АСФ №16', '16']}, {'Торговый зал ППФ №16': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №16.xlsx', 'ППФ №16', '16']}, {'Торговый зал ППФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №17.xlsx', 'ППФ №17', '17']}, {'Торговый зал ШФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №17.xlsx', 'ШФ №17', '17']}, {'Торговый зал АСФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №17.xlsx', 'АСФ №17', '17']}, {'Торговый зал АСФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №18.xlsx', 'АСФ №18', '18']}, {'Торговый зал ППФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №18.xlsx', 'ППФ №18', '18']}, {'Торговый зал ШФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №18.xlsx', 'ШФ №18', '18']}, {'Торговый зал АСФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №19.xlsx', 'АСФ №19', '19']}, {'Торговый зал ППФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №19.xlsx', 'ППФ №19', '19']}, {'Торговый зал ШФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №19.xlsx', 'ШФ №19', '19']}, {'Торговый зал ФКС №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ФКС №2.xlsx', 'ФКС №2', '2']}, {'Торговый зал КЗФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КЗФ №2.xlsx', 'КЗФ №2', '2']}, {'Торговый зал ППФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №2.xlsx', 'ППФ №2', '2']}, {'Торговый зал ТКФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТКФ №2.xlsx', 'ТКФ №2', '2']}, {'Торговый зал ТЗФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТЗФ №2.xlsx', 'ТЗФ №2', '2']}, {'Торговый зал ТФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №2.xlsx', 'ТФ №2', '2']}, {'Торговый зал АСФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №2.xlsx', 'АСФ №2', '2']}, {'Торговый зал УКФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал УКФ №2.xlsx', 'УКФ №2', '2']}, {'Торговый зал ШФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №2.xlsx', 'ШФ №2', '2']}, {'Торговый зал АСФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №20.xlsx', 'АСФ №20', '20']}, {'Торговый зал ППФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №20.xlsx', 'ППФ №20', '20']}, {'Торговый зал ШФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №20.xlsx', 'ШФ №20', '20']}, {'Торговый зал АСФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №21.xlsx', 'АСФ №21', '21']}, {'Торговый зал ППФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №21.xlsx', 'ППФ №21', '21']}, {'Торговый зал ШФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №21.xlsx', 'ШФ №21', '21']}, {'Торговый зал АСФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №22.xlsx', 'АСФ №22', '22']}, {'Торговый зал ППФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №22.xlsx', 'ППФ №22', '22']}, {'Торговый зал ШФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №22.xlsx', 'ШФ №22', '22']}, {'Торговый зал АСФ №23': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №23.xlsx', 'АСФ №23', '23']}, {'Торговый зал ШФ №23': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №23.xlsx', 'ШФ №23', '23']}, {'Торговый зал ШФ №24': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №24.xlsx', 'ШФ №24', '24']}, {'Торговый зал АСФ №24': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №24.xlsx', 'АСФ №24', '24']}, {'Торговый зал АСФ №25': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №25.xlsx', 'АСФ №25', '25']}, {'Торговый зал ШФ №25': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №25.xlsx', 'ШФ №25', '25']}, {'Торговый зал АСФ №26': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №26.xlsx', 'АСФ №26', '26']}, {'Торговый зал ШФ №26': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №26.xlsx', 'ШФ №26', '26']}, {'Торговый зал АСФ №27': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №27.xlsx', 'АСФ №27', '27']}, {'Торговый зал ШФ №27': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №27.xlsx', 'ШФ №27', '27']}, {'Торговый зал ШФ №28': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №28.xlsx', 'ШФ №28', '28']}, {'Торговый зал АСФ №28': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №28.xlsx', 'АСФ №28', '28']}, {'Торговый зал АСФ №29': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №29.xlsx', 'АСФ №29', '29']}, {'Торговый зал ШФ №29': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №29.xlsx', 'ШФ №29', '29']}, {'Торговый зал ТФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №3.xlsx', 'ТФ №3', '3']}, {'Торговый зал АСФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №3.xlsx', 'АСФ №3', '3']}, {'Торговый зал КФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №3.xlsx', 'КФ №3', '3']}, {'Торговый зал ППФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №3.xlsx', 'ППФ №3', '3']}, {'Торговый зал ТЗФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТЗФ №3.xlsx', 'ТЗФ №3', '3']}, {'Торговый зал УКФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал УКФ №3.xlsx', 'УКФ №3', '3']}, {'Торговый зал ШФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №3.xlsx', 'ШФ №3', '3']}, {'Торговый зал АСФ №30': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №30.xlsx', 'АСФ №30', '30']}, {'Торговый зал ШФ №30': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №30.xlsx', 'ШФ №30', '30']}, {'Торговый зал АСФ №31': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №31.xlsx', 'АСФ №31', '31']}, {'Торговый зал АСФ №32': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №32.xlsx', 'АСФ №32', '32']}, {'Торговый зал ШФ №32': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №32.xlsx', 'ШФ №32', '32']}, {'Торговый зал АСФ №33': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №33.xlsx', 'АСФ №33', '33']}, {'Торговый зал ШФ №33': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №33.xlsx', 'ШФ №33', '33']}, {'Торговый зал АСФ №34': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №34.xlsx', 'АСФ №34', '34']}, {'Торговый зал ШФ №34': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №34.xlsx', 'ШФ №34', '34']}, {'Торговый зал АСФ №35': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №35.xlsx', 'АСФ №35', '35']}, {'Торговый зал_ОПТ ШФ №35': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал_ОПТ ШФ №35.xlsx', 'Торговый зал_ОПТ ШФ №35', '35']}, {'Торговый зал АСФ №36': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №36.xlsx', 'АСФ №36', '36']}, {'Торговый зал АФ №36': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №36.xlsx', 'АФ №36', '36']}, {'Торговый зал АСФ №37': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №37.xlsx', 'АСФ №37', '37']}, {'Торговый зал АФ №37': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №37.xlsx', 'АФ №37', '37']}, {'Торговый зал АСФ №38': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №38.xlsx', 'АСФ №38', '38']}, {'Торговый зал АФ №38': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №38.xlsx', 'АФ №38', '38']}, {'Торговый зал АСФ №39': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №39.xlsx', 'АСФ №39', '39']}, {'Торговый зал АФ №39': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №39.xlsx', 'АФ №39', '39']}, {'Торговый зал АСФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №4.xlsx', 'АСФ №4', '4']}, {'Торговый зал АФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №4.xlsx', 'АФ №4', '4']}, {'Торговый зал КФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №4.xlsx', 'КФ №4', '4']}, {'Торговый зал ППФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №4.xlsx', 'ППФ №4', '4']}, {'Торговый зал ТФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №4.xlsx', 'ТФ №4', '4']}, {'Торговый зал ШФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №4.xlsx', 'ШФ №4', '4']}, {'Торговый зал АСФ №40': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №40.xlsx', 'АСФ №40', '40']}, {'Торговый зал АФ №40': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №40.xlsx', 'АФ №40', '40']}, {'Торговый зал АСФ №41': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №41.xlsx', 'АСФ №41', '41']}, {'Торговый зал АФ №41': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №41.xlsx', 'АФ №41', '41']}, {'Торговый зал АСФ №42': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №42.xlsx', 'АСФ №42', '42']}, {'Торговый зал АФ №42': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №42.xlsx', 'АФ №42', '42']}, {'Торговый зал АФ №43': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №43.xlsx', 'АФ №43', '43']}, {'Торговый зал АСФ №44': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №44.xlsx', 'АСФ №44', '44']}, {'Торговый зал АФ №44': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №44.xlsx', 'АФ №44', '44']}, {'Торговый зал АСФ №45': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №45.xlsx', 'АСФ №45', '45']}, {'Торговый зал АФ №45': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №45.xlsx', 'АФ №45', '45']}, {'Торговый зал АСФ №46': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №46.xlsx', 'АСФ №46', '46']}, {'Торговый зал АФ №46': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №46.xlsx', 'АФ №46', '46']}, {'Торговый зал АСФ №47': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №47.xlsx', 'АСФ №47', '47']}, {'Торговый зал АФ №47': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №47.xlsx', 'АФ №47', '47']}, {'Торговый зал АСФ №48': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №48.xlsx', 'АСФ №48', '48']}, {'Торговый зал АФ №48': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №48.xlsx', 'АФ №48', '48']}, {'Торговый зал АФ №49': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №49.xlsx', 'АФ №49', '49']}, {'Торговый зал АСФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №5.xlsx', 'АСФ №5', '5']}, {'Торговый зал КФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №5.xlsx', 'КФ №5', '5']}, {'Торговый зал ППФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №5.xlsx', 'ППФ №5', '5']}, {'Торговый зал ШФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №5.xlsx', 'ШФ №5', '5']}, {'Торговый зал АСФ №50': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №50.xlsx', 'АСФ №50', '50']}, {'Торговый зал АФ №50': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №50.xlsx', 'АФ №50', '50']}, {'Торговый зал АСФ №51': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №51.xlsx', 'АСФ №51', '51']}, {'Торговый зал АФ №51': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №51.xlsx', 'АФ №51', '51']}, {'Торговый зал АСФ №52': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №52.xlsx', 'АСФ №52', '52']}, {'Торговый зал АФ №52': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №52.xlsx', 'АФ №52', '52']}, {'Торговый зал АСФ №53': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №53.xlsx', 'АСФ №53', '53']}, {'Торговый зал АФ №53': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №53.xlsx', 'АФ №53', '53']}, {'Торговый зал АСФ №54': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №54.xlsx', 'АСФ №54', '54']}, {'Торговый зал АФ №54': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №54.xlsx', 'АФ №54', '54']}, {'Торговый зал АСФ №55': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №55.xlsx', 'АСФ №55', '55']}, {'Торговый_зал АФ №55 ОПТ': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый_зал АФ №55 ОПТ.xlsx', 'Торговый_зал АФ №55 ОПТ', '55']}, {'Торговый зал АСФ №56': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №56.xlsx', 'АСФ №56', '56']}, {'Торговый зал АФ №56': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №56.xlsx', 'АФ №56', '56']}, {'Торговый зал АСФ №57': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №57.xlsx', 'АСФ №57', '57']}, {'Торговый зал АФ №57': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №57.xlsx', 'АФ №57', '57']}, {'Торговый зал АСФ №58': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №58.xlsx', 'АСФ №58', '58']}, {'Торговый зал АФ №58': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №58.xlsx', 'АФ №58', '58']}, {'Торговый зал АСФ №59': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №59.xlsx', 'АСФ №59', '59']}, {'Торговый зал АФ №59': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №59.xlsx', 'АФ №59', '59']}, {'Торговый зал АСФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №6.xlsx', 'АСФ №6', '6']}, {'Торговый зал КФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №6.xlsx', 'КФ №6', '6']}, {'Торговый зал ППФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №6.xlsx', 'ППФ №6', '6']}, {'Торговый зал ШФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №6.xlsx', 'ШФ №6', '6']}, {'Торговый зал АСФ №60': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №60.xlsx', 'АСФ №60', '60']}, {'Торговый зал АФ №60': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №60.xlsx', 'АФ №60', '60']}, {'Торговый зал АСФ №61': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №61.xlsx', 'АСФ №61', '61']}, {'Торговый зал АФ №61': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №61.xlsx', 'АФ №61', '61']}, {'Торговый зал АСФ №62': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №62.xlsx', 'АСФ №62', '62']}, {'Торговый зал АФ №62': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №62.xlsx', 'АФ №62', '62']}, {'Торговый зал АСФ №63': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №63.xlsx', 'АСФ №63', '63']}, {'Торговый зал АФ №63': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №63.xlsx', 'АФ №63', '63']}, {'Торговый зал АСФ №64': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №64.xlsx', 'АСФ №64', '64']}, {'Торговый зал АФ №64': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №64.xlsx', 'АФ №64', '64']}, {'Торговый зал АСФ №65': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №65.xlsx', 'АСФ №65', '65']}, {'Торговый зал АФ №65': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №65.xlsx', 'АФ №65', '65']}, {'Торговый зал АСФ №66': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №66.xlsx', 'АСФ №66', '66']}, {'Торговый зал АФ №66': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №66.xlsx', 'АФ №66', '66']}, {'Торговый зал АСФ №67': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №67.xlsx', 'АСФ №67', '67']}, {'Торговый зал АФ №67': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №67.xlsx', 'АФ №67', '67']}, {'Торговый зал АСФ №68': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №68.xlsx', 'АСФ №68', '68']}, {'Торговый зал АФ №68': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №68.xlsx', 'АФ №68', '68']}, {'Торговый зал АСФ №69': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №69.xlsx', 'АСФ №69', '69']}, {'Торговый зал АФ №69': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №69.xlsx', 'АФ №69', '69']}, {'Торговый зал КФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №7.xlsx', 'КФ №7', '7']}, {'Торговый зал ППФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №7.xlsx', 'ППФ №7', '7']}, {'Торговый зал ШФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №7.xlsx', 'ШФ №7', '7']}, {'Торговый зал АФ №70': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №70.xlsx', 'АФ №70', '70']}, {'Торговый зал АСФ №71': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №71.xlsx', 'АСФ №71', '71']}, {'Торговый зал АСФ №72': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №72.xlsx', 'АСФ №72', '72']}, {'Торговый зал АФ №72': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №72.xlsx', 'АФ №72', '72']}, {'Торговый зал АСФ №73': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №73.xlsx', 'АСФ №73', '73']}, {'Торговый зал АФ №73': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №73.xlsx', 'АФ №73', '73']}, {'Торговый зал АСФ №74': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №74.xlsx', 'АСФ №74', '74']}, {'Торговый зал АСФ №75': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №75.xlsx', 'АСФ №75', '75']}, {'Торговый зал АФ №75': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №75.xlsx', 'АФ №75', '75']}, {'Торговый зал АСФ №76': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №76.xlsx', 'АСФ №76', '76']}, {'Торговый зал АФ №76': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №76.xlsx', 'АФ №76', '76']}, {'Торговый зал АСФ №77': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №77.xlsx', 'АСФ №77', '77']}, {'Торговый зал АФ №77': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №77.xlsx', 'АФ №77', '77']}, {'Торговый зал АФ №78': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №78.xlsx', 'АФ №78', '78']}, {'Торговый зал АСФ №79': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №79.xlsx', 'АСФ №79', '79']}, {'Торговый зал АСФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №8.xlsx', 'АСФ №8', '8']}, {'Торговый зал ППФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №8.xlsx', 'ППФ №8', '8']}, {'Торговый зал ШФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №8.xlsx', 'ШФ №8', '8']}, {'Торговый зал АСФ №80': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №80.xlsx', 'АСФ №80', '80']}, {'Торговый зал АФ №80': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №80.xlsx', 'АФ №80', '80']}, {'Торговый зал АСФ №81': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №81.xlsx', 'АСФ №81', '81']}, {'Торговый зал АФ №81': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №81.xlsx', 'АФ №81', '81']}, {'Торговый зал АСФ №82': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №82.xlsx', 'АСФ №82', '82']}, {'Торговый зал АФ №82': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №82.xlsx', 'АФ №82', '82']}, {'Торговый зал АСФ №83': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №83.xlsx', 'АСФ №83', '83']}, {'Торговый зал АФ №83': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №83.xlsx', 'АФ №83', '83']}, {'Торговый зал АФ №84': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №84.xlsx', 'АФ №84', '84']}, {'Торговый зал АФ №86': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №86.xlsx', 'АФ №86', '86']}, {'Торговый зал ШФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №9.xlsx', 'ШФ №9', '9']}, {'Торговый зал ППФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №9.xlsx', 'ППФ №9', '9']}, {'Торговый зал АСФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №1.xlsx', 'АСФ №1', '1']}, {'Торговый зал СТМ 1АФ': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал СТМ 1АФ.xlsx', 'СТМ 1АФ', '3']}, {'Торговый зал АФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №5.xlsx', 'АФ №5', '5']}, {'Торговый зал АСФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №10.xlsx', 'АСФ №10', '10']}, {'Торговый зал АСФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №15.xlsx', 'АСФ №15', '15']}, {'Торговый зал АСФ №11': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №11.xlsx', 'АСФ №11', '11']}, {'Торговый зал АСФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №12.xlsx', 'АСФ №12', '12']}, {'Торговый зал АСФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №13.xlsx', 'АСФ №13', '13']}, {'Торговый зал АСФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №14.xlsx', 'АСФ №14', '14']}, {'Торговый зал АСФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №7.xlsx', 'АСФ №7', '7']}, {'Торговый зал АСФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №9.xlsx', 'АСФ №9', '9']}, {'Торговый зал АСФ №70': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №70.xlsx', 'АСФ №70', '70']}]
+        # if True:  # ip_address == main_executor:
         #
+        #     dispatcher()
+
+        branches = get_data_to_execute()
+        print(branches)
+
+        # open_1c_zup()
+
+        all_excels = get_all_excels()
+
+        # all_excels = [{'Торговый зал АСФ №81': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №81.xlsx', 'АСФ №81', '81']}, {'Торговый зал АФ №38': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №38.xlsx', 'АФ №38', '38']}, {'Торговый зал СТМ 1АФ': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал СТМ 1АФ.xlsx', 'СТМ 1АФ', '1']}, {'Торговый зал АСФ №11': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №11.xlsx', 'АСФ №11', '11']}, {'Торговый зал ППФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №17.xlsx', 'ППФ №17', '17']}, {'Торговый зал АСФ №33': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №33.xlsx', 'АСФ №33', '33']}, {'Торговый зал ТФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №1.xlsx', 'ТФ №1', '1']}, {'Торговый зал КФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №5.xlsx', 'КФ №5', '5']}, {'Торговый зал АСФ №82': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №82.xlsx', 'АСФ №82', '82']}, {'Торговый зал АСФ №64': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №64.xlsx', 'АСФ №64', '64']}, {'Торговый зал АФ №37': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №37.xlsx', 'АФ №37', '37']}, {'Торговый зал ТКФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТКФ №1.xlsx', 'ТКФ №1', '1']}, {'Торговый зал АСФ №47': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №47.xlsx', 'АСФ №47', '47']}, {'Торговый зал АФ №35': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №35.xlsx', 'АФ №35', '35']}, {'Торговый зал АФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №9.xlsx', 'АФ №9', '9']}, {'Торговый зал АФ №57': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №57.xlsx', 'АФ №57', '57']}, {'Торговый зал АСФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №6.xlsx', 'АСФ №6', '6']}, {'Торговый зал КПФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КПФ №1.xlsx', 'КПФ №1', '1']}, {'Торговый зал АФ №28': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №28.xlsx', 'АФ №28', '28']}, {'Торговый зал АФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №21.xlsx', 'АФ №21', '21']}, {'Торговый зал АФ №23': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №23.xlsx', 'АФ №23', '23']}, {'Торговый зал АСФ №36': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №36.xlsx', 'АСФ №36', '36']}, {'Торговый зал АСФ №44': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №44.xlsx', 'АСФ №44', '44']}, {'Торговый зал ППФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №2.xlsx', 'ППФ №2', '2']}, {'Торговый зал АСФ №58': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №58.xlsx', 'АСФ №58', '58']}, {'Торговый зал АСФ №29': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №29.xlsx', 'АСФ №29', '29']}, {'Торговый зал АФ №81': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №81.xlsx', 'АФ №81', '81']}, {'Торговый зал АФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №18.xlsx', 'АФ №18', '18']}, {'Торговый зал АФ №34': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №34.xlsx', 'АФ №34', '34']}, {'Торговый зал АСФ №34': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №34.xlsx', 'АСФ №34', '34']}, {'Торговый зал КФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №7.xlsx', 'КФ №7', '7']}, {'Торговый зал АСФ №23': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №23.xlsx', 'АСФ №23', '23']}, {'Торговый зал АФ №64': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №64.xlsx', 'АФ №64', '64']}, {'Торговый зал АСФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №22.xlsx', 'АСФ №22', '22']}, {'Торговый зал АСФ №67': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №67.xlsx', 'АСФ №67', '67']}, {'Торговый зал ШФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №3.xlsx', 'ШФ №3', '3']}, {'Торговый зал ШФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №20.xlsx', 'ШФ №20', '20']}, {'Торговый зал АСФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №8.xlsx', 'АСФ №8', '8']}, {'Торговый зал УКФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал УКФ №2.xlsx', 'УКФ №2', '2']}, {'Торговый зал АФ №45': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №45.xlsx', 'АФ №45', '45']}, {'Торговый зал АФ №58': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №58.xlsx', 'АФ №58', '58']}, {'Торговый зал АФ №29': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №29.xlsx', 'АФ №29', '29']}, {'Торговый зал АФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №2.xlsx', 'АФ №2', '2']}, {'Торговый зал АФ №42': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №42.xlsx', 'АФ №42', '42']}, {'Торговый зал ППФ №16': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №16.xlsx', 'ППФ №16', '16']}, {'Торговый зал АСФ №65': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №65.xlsx', 'АСФ №65', '65']}, {'Торговый зал АФ №40': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №40.xlsx', 'АФ №40', '40']}, {'Торговый зал АСФ №24': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №24.xlsx', 'АСФ №24', '24']}, {'Торговый зал ШФ №28': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №28.xlsx', 'ШФ №28', '28']}, {'Торговый зал АФ №16': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №16.xlsx', 'АФ №16', '16']}, {'Торговый зал АФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №8.xlsx', 'АФ №8', '8']}, {'Торговый зал АФ №60': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №60.xlsx', 'АФ №60', '60']}, {'Торговый зал АСФ №55': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №55.xlsx', 'АСФ №55', '55']}, {'Торговый зал АСФ №73': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №73.xlsx', 'АСФ №73', '73']}, {'Торговый зал АСФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №7.xlsx', 'АСФ №7', '7']}, {'Торговый зал ШФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №15.xlsx', 'ШФ №15', '15']}, {'Торговый зал ФКС №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ФКС №2.xlsx', 'ФКС №2', '2']}, {'Торговый зал ФКС №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ФКС №1.xlsx', 'ФКС №1', '1']}, {'Торговый зал АФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №14.xlsx', 'АФ №14', '14']}, {'Торговый зал ШФ №34': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №34.xlsx', 'ШФ №34', '34']}, {'Торговый зал ТФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №2.xlsx', 'ТФ №2', '2']}, {'Торговый зал ШФ №33': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №33.xlsx', 'ШФ №33', '33']}, {'Торговый_зал АФ №55 ОПТ': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый_зал АФ №55 ОПТ.xlsx', 'Торговый_зал АФ №55 ОПТ', '55']}, {'Торговый зал_ОПТ ШФ №35': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал_ОПТ ШФ №35.xlsx', 'Торговый зал_ОПТ ШФ №35', '35']}, {'Торговый зал АСФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №9.xlsx', 'АСФ №9', '9']}, {'Торговый зал АСФ №72': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №72.xlsx', 'АСФ №72', '72']}, {'Торговый зал АФ №33': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №33.xlsx', 'АФ №33', '33']}, {'Торговый зал КФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №6.xlsx', 'КФ №6', '6']}, {'Торговый зал АФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №13.xlsx', 'АФ №13', '13']}, {'Торговый зал АФ №82': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №82.xlsx', 'АФ №82', '82']}, {'Торговый зал ППФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №10.xlsx', 'ППФ №10', '10']}, {'Торговый зал АСФ №37': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №37.xlsx', 'АСФ №37', '37']}, {'Торговый зал АСФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №12.xlsx', 'АСФ №12', '12']}, {'Торговый зал АСФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №18.xlsx', 'АСФ №18', '18']}, {'Торговый зал ППФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №12.xlsx', 'ППФ №12', '12']}, {'Торговый зал АСФ №75': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №75.xlsx', 'АСФ №75', '75']}, {'Торговый зал АСФ №54': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №54.xlsx', 'АСФ №54', '54']}, {'Торговый зал АФ №46': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №46.xlsx', 'АФ №46', '46']}, {'Торговый зал АСФ №60': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №60.xlsx', 'АСФ №60', '60']}, {'Торговый зал АСФ №66': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №66.xlsx', 'АСФ №66', '66']}, {'Торговый зал АФ №86': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №86.xlsx', 'АФ №86', '86']}, {'Торговый зал ШФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №21.xlsx', 'ШФ №21', '21']}, {'Торговый зал АФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №5.xlsx', 'АФ №5', '5']}, {'Торговый зал АФ №75': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №75.xlsx', 'АФ №75', '75']}, {'Торговый зал ШФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №6.xlsx', 'ШФ №6', '6']}, {'Торговый зал АФ №43': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №43.xlsx', 'АФ №43', '43']}, {'Торговый зал АСФ №71': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №71.xlsx', 'АСФ №71', '71']}, {'Торговый зал КЗФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КЗФ №2.xlsx', 'КЗФ №2', '2']}, {'Торговый зал АФ №25': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №25.xlsx', 'АФ №25', '25']}, {'Торговый зал АФ №83': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №83.xlsx', 'АФ №83', '83']}, {'Торговый зал ШФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №5.xlsx', 'ШФ №5', '5']}, {'Торговый зал КФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №2.xlsx', 'КФ №2', '2']}, {'Торговый зал АСФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №21.xlsx', 'АСФ №21', '21']}, {'Торговый зал АФ №30': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №30.xlsx', 'АФ №30', '30']}, {'Торговый зал АФ №72': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №72.xlsx', 'АФ №72', '72']}, {'Торговый зал АСФ №62': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №62.xlsx', 'АСФ №62', '62']}, {'Торговый зал АФ №59': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №59.xlsx', 'АФ №59', '59']}, {'Торговый зал ТФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №4.xlsx', 'ТФ №4', '4']}, {'Торговый зал АСФ №45': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №45.xlsx', 'АСФ №45', '45']}, {'Торговый зал АСФ №57': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №57.xlsx', 'АСФ №57', '57']}, {'Торговый зал ППФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №19.xlsx', 'ППФ №19', '19']}, {'Торговый зал АФ №31': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №31.xlsx', 'АФ №31', '31']}, {'Торговый зал АФ №61': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №61.xlsx', 'АФ №61', '61']}, {'Торговый зал АФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №7.xlsx', 'АФ №7', '7']}, {'Торговый зал АФ №36': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №36.xlsx', 'АФ №36', '36']}, {'Торговый зал ППФ №23': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №23.xlsx', 'ППФ №23', '23']}, {'Торговый зал ШФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №14.xlsx', 'ШФ №14', '14']}, {'Торговый зал АСФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №4.xlsx', 'АСФ №4', '4']}, {'Торговый зал ШФ №23': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №23.xlsx', 'ШФ №23', '23']}, {'Торговый зал ТЗФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТЗФ №1.xlsx', 'ТЗФ №1', '1']}, {'Торговый зал АФ №44': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №44.xlsx', 'АФ №44', '44']}, {'Торговый зал АФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №15.xlsx', 'АФ №15', '15']}, {'Торговый зал ТЗФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТЗФ №2.xlsx', 'ТЗФ №2', '2']}, {'Торговый зал АФ №70': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №70.xlsx', 'АФ №70', '70']}, {'Торговый зал АФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №17.xlsx', 'АФ №17', '17']}, {'Торговый зал АСФ №52': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №52.xlsx', 'АСФ №52', '52']}, {'Торговый зал ППФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №13.xlsx', 'ППФ №13', '13']}, {'Торговый зал АСФ №32': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №32.xlsx', 'АСФ №32', '32']}, {'Торговый зал АФ №80': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №80.xlsx', 'АФ №80', '80']}, {'Торговый зал ППФ №21': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №21.xlsx', 'ППФ №21', '21']}, {'Торговый зал АФ №51': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №51.xlsx', 'АФ №51', '51']}, {'Торговый зал КФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №3.xlsx', 'КФ №3', '3']}, {'Торговый зал КФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КФ №4.xlsx', 'КФ №4', '4']}, {'Торговый зал ШФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №2.xlsx', 'ШФ №2', '2']}, {'Торговый зал ППФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №15.xlsx', 'ППФ №15', '15']}, {'Торговый зал АСФ №59': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №59.xlsx', 'АСФ №59', '59']}, {'Торговый зал УКФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал УКФ №1.xlsx', 'УКФ №1', '1']}, {'Торговый зал АСФ №31': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №31.xlsx', 'АСФ №31', '31']}, {'Торговый зал ППФ №11': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №11.xlsx', 'ППФ №11', '11']}, {'Торговый зал АСФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №19.xlsx', 'АСФ №19', '19']}, {'Торговый зал АФ №78': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №78.xlsx', 'АФ №78', '78']}, {'Торговый зал ППФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №3.xlsx', 'ППФ №3', '3']}, {'Торговый зал АСФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №1.xlsx', 'АСФ №1', '1']}, {'Торговый зал АФ №65': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №65.xlsx', 'АФ №65', '65']}, {'Торговый зал АФ №26': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №26.xlsx', 'АФ №26', '26']}, {'Торговый зал ШФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №1.xlsx', 'ШФ №1', '1']}, {'Торговый зал АСФ №40': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №40.xlsx', 'АСФ №40', '40']}, {'Торговый зал ШФ №32': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №32.xlsx', 'ШФ №32', '32']}, {'Торговый зал ЕКФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ЕКФ №1.xlsx', 'ЕКФ №1', '1']}, {'Торговый зал АСФ №16': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №16.xlsx', 'АСФ №16', '16']}, {'Торговый зал АФ №47': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №47.xlsx', 'АФ №47', '47']}, {'Торговый зал ШФ №25': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №25.xlsx', 'ШФ №25', '25']}, {'Торговый зал ТКФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТКФ №2.xlsx', 'ТКФ №2', '2']}, {'Торговый зал АСФ №15': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №15.xlsx', 'АСФ №15', '15']}, {'Торговый зал ШФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №10.xlsx', 'ШФ №10', '10']}, {'Торговый зал АСФ №42': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №42.xlsx', 'АСФ №42', '42']}, {'Торговый зал ШФ №27': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №27.xlsx', 'ШФ №27', '27']}, {'Торговый зал АСФ №80': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №80.xlsx', 'АСФ №80', '80']}, {'Торговый зал АФ №48': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №48.xlsx', 'АФ №48', '48']}, {'Торговый зал АСФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №20.xlsx', 'АСФ №20', '20']}, {'Торговый зал ППФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №22.xlsx', 'ППФ №22', '22']}, {'Торговый зал АФ №41': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №41.xlsx', 'АФ №41', '41']}, {'Торговый зал АСФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №10.xlsx', 'АСФ №10', '10']}, {'Торговый зал АФ №24': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №24.xlsx', 'АФ №24', '24']}, {'Торговый зал АСФ №51': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №51.xlsx', 'АСФ №51', '51']}, {'Торговый зал УКФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал УКФ №3.xlsx', 'УКФ №3', '3']}, {'Торговый зал АСФ №27': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №27.xlsx', 'АСФ №27', '27']}, {'Торговый зал АФ №73': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №73.xlsx', 'АФ №73', '73']}, {'Торговый зал ППФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №6.xlsx', 'ППФ №6', '6']}, {'Торговый зал ШФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №8.xlsx', 'ШФ №8', '8']}, {'Торговый зал ППФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №5.xlsx', 'ППФ №5', '5']}, {'Торговый зал АСФ №2': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №2.xlsx', 'АСФ №2', '2']}, {'Торговый зал ППФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №14.xlsx', 'ППФ №14', '14']}, {'Торговый зал ШФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №13.xlsx', 'ШФ №13', '13']}, {'Торговый зал АФ №69': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №69.xlsx', 'АФ №69', '69']}, {'Торговый зал АФ №6': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №6.xlsx', 'АФ №6', '6']}, {'Торговый зал АСФ №5': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №5.xlsx', 'АСФ №5', '5']}, {'Торговый зал АСФ №63': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №63.xlsx', 'АСФ №63', '63']}, {'Торговый зал АСФ №30': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №30.xlsx', 'АСФ №30', '30']}, {'Торговый зал АСФ №50': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №50.xlsx', 'АСФ №50', '50']}, {'Торговый зал АСФ №39': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №39.xlsx', 'АСФ №39', '39']}, {'Торговый зал АСФ №83': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №83.xlsx', 'АСФ №83', '83']}, {'Торговый зал АСФ №25': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №25.xlsx', 'АСФ №25', '25']}, {'Торговый зал ППФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №9.xlsx', 'ППФ №9', '9']}, {'Торговый зал ШФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №4.xlsx', 'ШФ №4', '4']}, {'Торговый зал АСФ №61': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №61.xlsx', 'АСФ №61', '61']}, {'Торговый зал АСФ №14': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №14.xlsx', 'АСФ №14', '14']}, {'Торговый зал АСФ №77': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №77.xlsx', 'АСФ №77', '77']}, {'Торговый зал ППФ №8': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №8.xlsx', 'ППФ №8', '8']}, {'Торговый зал АФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №20.xlsx', 'АФ №20', '20']}, {'Торговый зал ШФ №29': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №29.xlsx', 'ШФ №29', '29']}, {'Торговый зал ППФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №18.xlsx', 'ППФ №18', '18']}, {'Торговый зал АСФ №69': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №69.xlsx', 'АСФ №69', '69']}, {'Торговый зал АФ №67': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №67.xlsx', 'АФ №67', '67']}, {'Торговый зал ППФ №20': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №20.xlsx', 'ППФ №20', '20']}, {'Торговый зал АФ №53': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №53.xlsx', 'АФ №53', '53']}, {'Торговый зал АФ №77': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №77.xlsx', 'АФ №77', '77']}, {'Торговый зал АСФ №48': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №48.xlsx', 'АСФ №48', '48']}, {'Торговый зал АФ №54': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №54.xlsx', 'АФ №54', '54']}, {'Торговый зал АСФ №28': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №28.xlsx', 'АСФ №28', '28']}, {'Торговый зал АФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №4.xlsx', 'АФ №4', '4']}, {'Торговый зал АСФ №26': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №26.xlsx', 'АСФ №26', '26']}, {'Торговый зал АФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №1.xlsx', 'АФ №1', '1']}, {'Торговый зал ППФ №4': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №4.xlsx', 'ППФ №4', '4']}, {'Торговый зал АФ №76': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №76.xlsx', 'АФ №76', '76']}, {'Торговый зал АФ №39': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №39.xlsx', 'АФ №39', '39']}, {'Торговый зал АФ №10': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №10.xlsx', 'АФ №10', '10']}, {'Торговый зал ШФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №7.xlsx', 'ШФ №7', '7']}, {'Торговый зал ШФ №30': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №30.xlsx', 'ШФ №30', '30']}, {'Торговый зал АФ №84': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №84.xlsx', 'АФ №84', '84']}, {'Торговый зал АСФ №79': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №79.xlsx', 'АСФ №79', '79']}, {'Торговый зал АСФ №13': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №13.xlsx', 'АСФ №13', '13']}, {'Торговый зал АСФ №68': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №68.xlsx', 'АСФ №68', '68']}, {'Торговый зал ТФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТФ №3.xlsx', 'ТФ №3', '3']}, {'Торговый зал АФ №66': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №66.xlsx', 'АФ №66', '66']}, {'Торговый зал ШФ №26': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №26.xlsx', 'ШФ №26', '26']}, {'Торговый зал ППФ №7': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №7.xlsx', 'ППФ №7', '7']}, {'Торговый зал СТМ 6ШФ BAIS': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал СТМ 6ШФ BAIS.xlsx', 'СТМ 6ШФ BAIS', '6']}, {'Торговый зал АСФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №17.xlsx', 'АСФ №17', '17']}, {'Торговый зал ШФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №19.xlsx', 'ШФ №19', '19']}, {'Торговый зал АСФ №41': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №41.xlsx', 'АСФ №41', '41']}, {'Торговый зал АФ №63': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №63.xlsx', 'АФ №63', '63']}, {'Торговый зал АСФ №74': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №74.xlsx', 'АСФ №74', '74']}, {'Торговый зал АСФ №38': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №38.xlsx', 'АСФ №38', '38']}, {'Торговый зал АФ №11': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №11.xlsx', 'АФ №11', '11']}, {'Торговый зал АФ №50': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №50.xlsx', 'АФ №50', '50']}, {'Торговый зал ШФ №24': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №24.xlsx', 'ШФ №24', '24']}, {'Торговый зал АФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №22.xlsx', 'АФ №22', '22']}, {'Торговый зал АСФ №46': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №46.xlsx', 'АСФ №46', '46']}, {'Торговый зал АСФ №76': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №76.xlsx', 'АСФ №76', '76']}, {'Торговый зал АФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №12.xlsx', 'АФ №12', '12']}, {'Торговый зал ШФ №12': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №12.xlsx', 'ШФ №12', '12']}, {'Торговый зал ШФ №17': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №17.xlsx', 'ШФ №17', '17']}, {'Торговый зал АСФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №3.xlsx', 'АСФ №3', '3']}, {'Торговый зал АСФ №35': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №35.xlsx', 'АСФ №35', '35']}, {'Торговый зал АФ №19': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №19.xlsx', 'АФ №19', '19']}, {'Торговый зал АФ №32': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №32.xlsx', 'АФ №32', '32']}, {'Торговый зал КЗФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал КЗФ №1.xlsx', 'КЗФ №1', '1']}, {'Торговый зал АФ №52': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №52.xlsx', 'АФ №52', '52']}, {'Торговый зал АФ №56': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №56.xlsx', 'АФ №56', '56']}, {'Торговый зал ППФ №1': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ППФ №1.xlsx', 'ППФ №1', '1']}, {'Торговый зал ШФ №18': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №18.xlsx', 'ШФ №18', '18']}, {'Торговый зал ТЗФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ТЗФ №3.xlsx', 'ТЗФ №3', '3']}, {'Торговый зал АФ №49': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №49.xlsx', 'АФ №49', '49']}, {'Торговый зал ШФ №22': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №22.xlsx', 'ШФ №22', '22']}, {'Торговый зал АФ №68': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №68.xlsx', 'АФ №68', '68']}, {'Торговый зал АФ №62': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №62.xlsx', 'АФ №62', '62']}, {'Торговый зал АФ №3': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АФ №3.xlsx', 'АФ №3', '3']}, {'Торговый зал ШФ №9': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал ШФ №9.xlsx', 'ШФ №9', '9']}, {'Торговый зал АСФ №56': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №56.xlsx', 'АСФ №56', '56']}, {'Торговый зал АСФ №53': ['\\\\172.16.8.87\\d\\.rpa\\.agent\\robot-stat-1t\\Output\\Выгрузка 1Т из 1С\\Торговый зал АСФ №53.xlsx', 'АСФ №53', '53']}]
+
+        random.shuffle(all_excels)
+
         print(all_excels)
-        # logger.info(all_excels)
+
         logger.warning(all_excels)
-        # for excel in all_excels:
-        #     for key, val in excel.items():
-        #         print(key, val)
-            # print(excel)
-            # print('---')
+
         print('-----------------')
-        exit()
-        for filepath_ in os.listdir(main_excel_files):
-
-            pass
-
-            # * Uncomment
-            # shutil.copy(os.path.join(main_excel_files, filepath_), os.path.join(filled_files, filepath_))
+        # if ip_address == main_executor:
+        # for filepath_ in os.listdir(main_excel_files):
+        #
+        #     shutil.copy(os.path.join(main_excel_files, filepath_), os.path.join(filled_files, filepath_))
 
         # if ip_address == '10.70.2.9':
         #     all_excels = all_excels[::2]
@@ -1202,68 +1488,75 @@ if __name__ == '__main__':
 
         for excel in all_excels:
             for branch, vals in excel.items():
-
-                checkus = False
-                print('KKK', saving_path)
-                for sent_report in os.listdir(reports_saving_path):
-                    if branch == sent_report.replace('.jpg', ''):
-                        checkus = True
-                        break
-
-                if checkus:
-                    print(f'SKIPPED BRANCHOS: {branch}')
-                    # continue
-
-                logger.warning(f'STARTED BRANCHOS: {branch}')
-                # continue
-                col = None
-                filepath_for_report = None
-
-                for filepath_ in os.listdir(main_excel_files):
-
-                    if True:
-                        print(os.path.join(filled_files, filepath_), branch, vals[0], vals[1])
-                        col = edit_main_excel_file(os.path.join(filled_files, filepath_), branch, vals[0], vals[1])
-
-                        if col is None:
-                            continue
-                        else:
-                            filepath_for_report = filepath_
+                try:
+                    checkus = False
+                    print('KKK', saving_path)
+                    for sent_report in os.listdir(reports_saving_path):
+                        if branch == sent_report.replace('.jpg', ''):
+                            checkus = True
                             break
 
-                    # except Exception as err:
-                    #     logger.info(f"ERRORUS OCC URED: {err} | {branch}")
-                    #     logger.warning(f"ERRORUS OCCURED: {err} | {branch}")
-                    #     if 'such file' in str(err):
-                    #         logger.info(f'SKIPPING THAT BRANCH {branch}')
+                    if checkus:
+                        print(f'ALREADY IN THE FOLDER BRANCHOS: {branch}')
+                        continue
 
-                print(f"FOUND COL!!! {branch} ||| {col}")
-                print('-------------------')
-                col = 'H'
-                if '~' not in vals and col is not None and filepath_for_report is not None:
-                    pass
-                    short_name, first_part, second_part = get_data_to_fill(os.path.join(filled_files, filepath_for_report), branch, col)
+                    logger.warning(f'STARTED BRANCHOS: {branch}')
+                    # if '58' not in branch:
+                    #     continue
+                    # continue
+                    col = None
+                    filepath_for_report = None
 
-                    print('------KEKJON------')
-                    print(short_name, first_part, second_part, sep='\n')
-                    # sleep(1000)
-                    start_time = time.time()
-                    insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
-                                      executor_name=ip_address, status_='processing', status_1c='success', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, branch))
-                    try:
-                        status, error_saved_path, error = start_single_branch(branch, first_part, second_part)
+                    for filepath_ in os.listdir(main_excel_files):
 
+                        try:
+                            print(os.path.join(filled_files, filepath_), branch, vals[0], vals[1])
+                            col = edit_main_excel_file(os.path.join(filled_files, filepath_), branch, vals[0], vals[1])
+
+                            if col is None:
+                                insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=vals[1],
+                                                  executor_name=ip_address, status_='error', status_1c='success', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, branch))
+                                continue
+                            else:
+                                filepath_for_report = filepath_
+                                break
+
+                        except Exception as err:
+                            logger.info(f"ERRORUS OCC URED: {err} | {branch}")
+                            logger.warning(f"ERRORUS OCCURED: {err} | {branch}")
+                            if 'such file' in str(err):
+                                logger.info(f'SKIPPING THAT BRANCH {branch}')
+
+                    print(f"FOUND COL!!! {branch} ||| {col}")
+                    print('-------------------')
+                    # col = 'H'
+                    if '~' not in vals and col is not None and filepath_for_report is not None:
+
+                        short_name, first_part, second_part = get_data_to_fill(os.path.join(filled_files, filepath_for_report), branch, col)
+
+                        print('------KEKJON------')
+                        print(short_name, first_part, second_part, sep='\n')
+                        # sleep(1000)
+                        start_time = time.time()
                         insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
-                                          executor_name=ip_address, status_=status, status_1c='success', error_reason=error, error_saved_path=error_saved_path, execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch))
+                                          executor_name=ip_address, status_='processing', status_1c='success', error_reason='', error_saved_path='', execution_time=0, ecp_path_=os.path.join(ecp_paths, branch))
 
-                    except Exception as error:
+                        try:
+                            status, error_saved_path, error = start_single_branch(branch, first_part, second_part)
 
-                        insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
-                                          executor_name=ip_address, status_='failed with error', status_1c='success', error_reason=str(error), error_saved_path='', execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch))
+                            insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
+                                              executor_name=ip_address, status_=status, status_1c='success', error_reason=error, error_saved_path=error_saved_path, execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch))
 
-    # except Exception as errorik:
-    #     print(f'ERROR: {errorik}')
-    #     logger.info(f'ERROR: {errorik}')
-    #     logger.warning(f'ERROR: {errorik}')
+                        except Exception as error:
+
+                            insert_data_in_db(started_time=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f"), store_name=branch, short_name=short_name,
+                                              executor_name=ip_address, status_='failed with error', status_1c='success', error_reason=str(error), error_saved_path='', execution_time=round(time.time() - start_time), ecp_path_=os.path.join(ecp_paths, branch))
+                except:
+                    traceback.print_exc()
+                    continue
+    except Exception as errorik:
+        traceback.print_exc()
+        logger.info(f'ERROR: {errorik}')
+        logger.warning(f'ERROR: {errorik}')
 
 

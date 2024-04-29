@@ -73,6 +73,7 @@ mapping_file = config_data['mapping_file']
 print(config_path)
 main_excel_files = config_data['main_excel_files']
 filled_files = config_data['filled_files']
+main_executor = config_data['main_executor']
 
 ip_address = socket.gethostbyname(socket.gethostname())
 
